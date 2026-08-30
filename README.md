@@ -1,8 +1,30 @@
 # Family7 Android TV App 📺✝️
 
-Een moderne, native **Android TV / Google TV** applicatie voor [Family7](https://www.family7.nl/), gebouwd met **Kotlin**, **Jetpack Compose for TV**, **Material 3**, en **AndroidX Media3 (ExoPlayer)**.
+[![Android CI](https://github.com/jwhengeveld/Family7-Android-TV/actions/workflows/android-build.yml/badge.svg)](https://github.com/jwhengeveld/Family7-Android-TV/actions/workflows/android-build.yml)
+[![Release](https://img.shields.io/github/v/release/jwhengeveld/Family7-Android-TV?color=orange&label=Latest%20APK)](https://github.com/jwhengeveld/Family7-Android-TV/releases/latest)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.1.0-purple.svg)](https://kotlinlang.org)
+[![Compose TV](https://img.shields.io/badge/Jetpack%20Compose-TV%201.0.0-blue.svg)](https://developer.android.com/jetpack/compose/tv)
+[![Media3](https://img.shields.io/badge/AndroidX-Media3%20ExoPlayer-green.svg)](https://developer.android.com/media/media3)
 
-De app biedt volledige ondersteuning voor zowel **Live TV** (Family7 Plus) als de complete **On Demand** videocatalogus met afleveringen, seizoenen en zoekfunctionaliteit.
+Een moderne, native **Android TV / Google TV** applicatie voor [Family7](https://www.family7.nl/), ontwikkeld in **Kotlin** met **Jetpack Compose for TV**, **Material 3**, en **AndroidX Media3 (ExoPlayer)**.
+
+De app biedt volledige ondersteuning voor zowel **Live TV** (Family7 Plus livestream) als de complete **On Demand** videotheek met alle programma's, seizoenen, afleveringen en zoekfunctie.
+
+---
+
+## 📸 Schermafbeeldingen (Screenshots)
+
+| Inlogscherm (Drupal Auth) | On Demand Startscherm |
+|---|---|
+| ![Inlogscherm](docs/screenshots/01_login.png) | ![On Demand Startscherm](docs/screenshots/02_home.png) |
+
+| Programmadetails & Afleveringen | On Demand Video Playback (HD HLS) |
+|---|---|
+| ![Programmadetails](docs/screenshots/03_detail.png) | ![Video Player](docs/screenshots/04_ondemand_player.png) |
+
+| Live TV (Family7 Plus Uitzending) | A-Z Videotheek & Zoeken |
+|---|---|
+| ![Live TV Uitzending](docs/screenshots/05_livetv_player.png) | ![A-Z Videotheek](docs/screenshots/06_search_az.png) |
 
 ---
 
@@ -17,10 +39,10 @@ De app biedt volledige ondersteuning voor zowel **Live TV** (Family7 Plus) als d
   - Dynamische rijen ("Aanbevolen", "Mijn lijst", "Originals", "Documentaires", "Bijbelstudie", etc.).
   - Programmadetailpagina's met synopsis, seizoenen, afleveringsoverzichten en speelduur.
 - 🔍 **A-Z Catalogus & Zoeken**
-  - Snel alfabetisch filteren op alle beschikbare programma's.
+  - Snel alfabetisch filteren op alle 194+ beschikbare programma's.
   - Real-time zoekfunctie op titel en thema.
 - 🎮 **Geoptimaliseerd voor TV Afstandsbediening (D-Pad)**
-  - Vloeiende focus-indicatoren met schaalvergroting en Family7-oranje accenten.
+  - Vloeiende focus-indicatoren met schaalvergroting (1.06x) en Family7-oranje accenten.
   - Leanback launcher compatibel voor Android TV, Google TV, en smart home portals (zoals Meta Portal Go).
 - 🔐 **Veilige Authenticatie**
   - Drupal authenticatie met sessie- en cookiebeheer.
@@ -34,7 +56,7 @@ De app biedt volledige ondersteuning voor zowel **Live TV** (Family7 Plus) als d
 |---|---|
 | **Taal** | Kotlin 2.1.0 |
 | **UI Framework** | Jetpack Compose for TV / Compose Material 3 |
-| **Video Playback** | AndroidX Media3 ExoPlayer (HLS, Adaptive Streaming) |
+| **Video Playback** | AndroidX Media3 ExoPlayer 1.5.1 (HLS, Adaptive Streaming) |
 | **Networking & HTTP** | OkHttp 4.12.0 met persistente CookieJar |
 | **HTML / Scraping** | Jsoup 1.18.3 & Streampartner Recursive Unpacker |
 | **Afbeeldingen** | Coil 2.7.0 (Compose AsyncImage met disk caching) |
