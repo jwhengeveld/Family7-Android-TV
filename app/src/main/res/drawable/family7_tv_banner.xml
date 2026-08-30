@@ -1,0 +1,28 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <!-- Background Gradient -->
+    <path
+        android:pathData="M0,0 h320 v180 h-320 z"
+        android:fillColor="#031A38" />
+    
+    <!-- Decorative Wave / Accent -->
+    <path
+        android:pathData="M0,120 C100,90 220,170 320,110 L320,180 L0,180 Z"
+        android:fillColor="#042C5C" />
+
+    <!-- Family7 Emblem / Brand Orange Accent -->
+    <path
+        android:pathData="M180,45 L225,45 L190,135 L170,135 Z"
+        android:fillColor="#F47C20" />
+    <path
+        android:pathData="M165,45 L180,45 L160,95 L145,95 Z"
+        android:fillColor="#F47C20" />
+
+    <!-- White Base Elements -->
+    <path
+        android:pathData="M75,60 L140,60 L140,75 L95,75 L95,95 L130,95 L130,110 L95,110 L95,135 L75,135 Z"
+        android:fillColor="#FFFFFF" />
+</vector>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Family7</string>
+    <string name="nav_live">Live TV</string>
+    <string name="nav_my_list">Mijn Lijst</string>
+    <string name="nav_ondemand">On Demand</string>
+    <string name="nav_search">Zoeken</string>
+    <string name="nav_settings">Instellingen</string>
+    <style name="Theme.Family7TV" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#031A38</item>
+        <item name="android:colorPrimary">#03326C</item>
+        <item name="android:colorAccent">#F47C20</item>
+    </style>
+</resources>

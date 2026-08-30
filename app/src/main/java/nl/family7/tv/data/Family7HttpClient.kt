@@ -1,0 +1,111 @@
+package nl.family7.tv.data
+
+import android.content.Context
+import android.content.SharedPreferences
+import okhttp3.Cookie
+import okhttp3.CookieJar
+import okhttp3.HttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.logging.HttpLoggingInterceptor
+import java.util.concurrent.TimeUnit
+
+class PersistentCookieJar(context: Context) : CookieJar {
+    private val prefs: SharedPreferences = context.getSharedPreferences("family7_cookies", Context.MODE_PRIVATE)
+    private val cookieStore = mutableMapOf<String, MutableList<Cookie>>()
+
+    init {
+        loadCookies()
+    }
+
+    private fun loadCookies() {
+        val allEntries = prefs.all
+        for ((host, serializedCookies) in allEntries) {
+            if (serializedCookies is String && serializedCookies.isNotEmpty()) {
+                val list = serializedCookies.split("||").mapNotNull { cookieStr ->
+                    val url = HttpUrl.Builder().scheme("https").host(host).build()
+                    Cookie.parse(url, cookieStr)
+                }.toMutableList()
+                cookieStore[host] = list
+            }
+        }
+    }
+
+    private fun saveCookies(host: String) {
+        val list = cookieStore[host] ?: return
+        val serialized = list.joinToString("||") { "${it.name}=${it.value}; domain=${it.domain}; path=${it.path}" }
+        prefs.edit().putString(host, serialized).apply()
+    }
+
+    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+        val host = url.host
+        val current = cookieStore.getOrPut(host) { mutableListOf() }
+        for (cookie in cookies) {
+            current.removeAll { it.name == cookie.name }
+            current.add(cookie)
+        }
+        saveCookies(host)
+    }
+
+    override fun loadForRequest(url: HttpUrl): List<Cookie> {
+        val host = url.host
+        val cookies = mutableListOf<Cookie>()
+        for ((storedHost, list) in cookieStore) {
+            if (host.endsWith(storedHost) || storedHost.endsWith(host)) {
+                cookies.addAll(list)
+            }
+        }
+        return cookies
+    }
+
+    fun clear() {
+        cookieStore.clear()
+        prefs.edit().clear().apply()
+    }
+
+    fun getAllCookies(): Map<String, String> {
+        val map = mutableMapOf<String, String>()
+        for (list in cookieStore.values) {
+            for (c in list) {
+                map[c.name] = c.value
+            }
+        }
+        return map
+    }
+}
+
+object Family7Http {
+    private var clientInstance: OkHttpClient? = null
+    private var cookieJarInstance: PersistentCookieJar? = null
+
+    fun getClient(context: Context): OkHttpClient {
+        if (clientInstance == null) {
+            val jar = getCookieJar(context)
+            val logging = HttpLoggingInterceptor().apply {
+                level = HttpLoggingInterceptor.Level.BASIC
+            }
+            clientInstance = OkHttpClient.Builder()
+                .cookieJar(jar)
+                .addInterceptor(logging)
+                .addInterceptor { chain ->
+                    val original = chain.request()
+                    val reqBuilder = original.newBuilder()
+                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; Android TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    if (original.header("Referer") == null) {
+                        reqBuilder.header("Referer", "https://www.family7.nl/")
+                    }
+                    chain.proceed(reqBuilder.build())
+                }
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(20, TimeUnit.SECONDS)
+                .build()
+        }
+        return clientInstance!!
+    }
+
+    fun getCookieJar(context: Context): PersistentCookieJar {
+        if (cookieJarInstance == null) {
+            cookieJarInstance = PersistentCookieJar(context.applicationContext)
+        }
+        return cookieJarInstance!!
+    }
+}

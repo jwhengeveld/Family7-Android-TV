@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Family7TV" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#031A38</item>
+        <item name="android:colorPrimary">#03326C</item>
+        <item name="android:colorAccent">#F47C20</item>
+    </style>
+</resources>
