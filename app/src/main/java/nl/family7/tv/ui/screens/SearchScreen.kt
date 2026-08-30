@@ -28,7 +28,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,7 +35,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 import nl.family7.tv.data.Family7CatalogRepository
 import nl.family7.tv.data.ProgramItem
 import nl.family7.tv.ui.components.TVButton
@@ -53,38 +51,56 @@ fun SearchScreen(
     onBack: () -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    var selectedLetter by remember { mutableStateOf("All") }
-    var searchResults by remember { mutableStateOf<List<ProgramItem>>(emptyList()) }
-    var isSearching by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    var selectedFilter by remember { mutableStateOf("Alles") }
+    var allPrograms by remember { mutableStateOf<List<ProgramItem>>(emptyList()) }
+    var displayedResults by remember { mutableStateOf<List<ProgramItem>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
 
-    val letters = listOf("All", "1,2,3", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z")
+    val quickFilters = listOf(
+        "Alles", "A-Z", "0-9", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
+        "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"
+    )
 
-    // Load initial A-Z catalog
-    LaunchedEffect(selectedLetter) {
-        isSearching = true
-        val letterParam = if (selectedLetter == "1,2,3") "1" else selectedLetter
-        val res = catalogRepo.getAZCatalog(letterParam)
+    // Load entire dynamic live catalog from Family7
+    LaunchedEffect(Unit) {
+        isLoading = true
+        val res = catalogRepo.getAllAZPrograms()
         res.onSuccess {
-            searchResults = it
-            isSearching = false
+            allPrograms = it
+            displayedResults = it
+            isLoading = false
         }.onFailure {
-            isSearching = false
+            isLoading = false
         }
     }
 
-    fun performSearch(q: String) {
-        if (q.isBlank()) return
-        isSearching = true
-        scope.launch {
-            val res = catalogRepo.search(q)
-            res.onSuccess {
-                searchResults = it
-                isSearching = false
-            }.onFailure {
-                isSearching = false
+    // Filter computation
+    fun applyFilter(filter: String, query: String) {
+        var list = allPrograms
+
+        // Apply text query if present
+        if (query.isNotBlank()) {
+            val q = query.trim().lowercase()
+            list = list.filter {
+                it.title.lowercase().contains(q) || it.slug.lowercase().contains(q)
             }
         }
+
+        // Apply quick category or letter filter
+        list = when (filter) {
+            "Alles" -> list
+            "0-9" -> list.filter { it.title.firstOrNull()?.isDigit() == true }
+            "A-Z" -> list.sortedBy { it.title.lowercase() }
+            else -> {
+                if (filter.length == 1 && filter[0].isLetter()) {
+                    list.filter { it.title.startsWith(filter, ignoreCase = true) }
+                } else {
+                    list
+                }
+            }
+        }
+
+        displayedResults = list
     }
 
     Column(
@@ -113,73 +129,88 @@ fun SearchScreen(
                 value = searchQuery,
                 onValueChange = {
                     searchQuery = it
-                    if (it.length >= 2) {
-                        performSearch(it)
-                    }
+                    applyFilter(selectedFilter, it)
                 },
-                placeholder = "Zoek op titel of thema...",
+                placeholder = "Zoek op titel, thema of trefwoord...",
                 leadingIcon = {
                     Icon(Icons.Default.Search, contentDescription = null, tint = Family7Orange)
                 },
-                onImeAction = { performSearch(searchQuery) }
+                onImeAction = { applyFilter(selectedFilter, searchQuery) }
             )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // A-Z Alphabet Filter Row
+        // Quick Filters & Alphabet Row
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            items(letters) { letter ->
-                val isSelected = selectedLetter == letter
+            items(quickFilters) { filter ->
+                val isSelected = selectedFilter == filter
                 TVButton(
-                    text = letter,
+                    text = filter,
                     onClick = {
-                        selectedLetter = letter
-                        searchQuery = ""
+                        selectedFilter = filter
+                        applyFilter(filter, searchQuery)
                     },
                     isPrimary = isSelected
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Results Summary
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = if (isLoading) "Programma's laden..." else "${displayedResults.size} programma's gevonden",
+                color = TextSecondary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            )
+            if (searchQuery.isNotEmpty()) {
+                Text(
+                    text = "Zoekresultaten voor \"$searchQuery\"",
+                    color = Family7Orange,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Results Grid
-        if (isSearching) {
+        if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Family7Orange)
             }
-        } else if (searchResults.isEmpty()) {
+        } else if (displayedResults.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    text = "Geen programma's gevonden.",
+                    text = "Geen programma's gevonden voor \"$searchQuery\".",
                     color = TextSecondary,
                     fontSize = 16.sp
                 )
             }
         } else {
-            Text(
-                text = "${searchResults.size} programma's gevonden:",
-                color = TextPrimary,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 220.dp),
                 contentPadding = PaddingValues(bottom = 32.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(searchResults) { program ->
+                items(displayedResults, key = { it.slug }) { item ->
                     TVProgramCard(
-                        item = program,
-                        onClick = { onSelectProgram(program) }
+                        item = item,
+                        onClick = { onSelectProgram(item) },
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }

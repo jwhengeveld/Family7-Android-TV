@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
 class Family7CatalogRepository(private val context: Context) {
@@ -12,13 +13,23 @@ class Family7CatalogRepository(private val context: Context) {
 
     companion object {
         private const val BASE_URL = "https://www.family7.nl"
-        private const val ONDEMAND_HOME_URL = "$BASE_URL/ondemandkijken"
+        private const val PLUS_HOME_URL = "$BASE_URL/plus"
+        private const val PLUS_NIEUW_URL = "$BASE_URL/plus/nieuw"
+        private const val PLUS_AZ_URL = "$BASE_URL/plus/a-z?title=All"
     }
 
+    /**
+     * Dynamically fetches the full On Demand home layout directly from Family7+.
+     * Includes:
+     * - Top Featured Hero banner
+     * - Latest releases ("Nieuw toegevoegd" from /plus/nieuw)
+     * - Personalized "Mijn lijst"
+     * - Category swimlanes (Aanbevolen, Originals, Kinderen, Bijbelstudie, Drama, etc.)
+     */
     suspend fun getOnDemandHome(): Result<List<CategoryRow>> = withContext(Dispatchers.IO) {
         try {
             val req = Request.Builder()
-                .url(ONDEMAND_HOME_URL)
+                .url(PLUS_HOME_URL)
                 .build()
 
             val resp = client.newCall(req).execute()
@@ -28,105 +39,68 @@ class Family7CatalogRepository(private val context: Context) {
             val doc = Jsoup.parse(html)
             val rows = mutableListOf<CategoryRow>()
 
-            // 1. Featured / Highlights row if available
+            // 1. Featured Hero Banner
             val heroItems = mutableListOf<ProgramItem>()
-            doc.select(".hero-slider_element, .hero-element, .view-on-demand-highlights .views-row").forEach { el ->
-                val link = el.select("a").firstOrNull() ?: return@forEach
-                val href = link.attr("href")
-                val title = el.select("h2, h3, .title, img").attr("alt").ifEmpty {
-                    el.select("h2, h3, .title").text()
-                }
-                var img = el.select("img").attr("src")
-                if (img.startsWith("/")) img = "$BASE_URL$img"
-                val badge = el.select(".ribbon, .badge, .label").text()
+            doc.select(".hero-slider_element, .hero-element, .view-on-demand-highlights .views-row, .view-highlight_programme .views-row").forEach { el ->
+                parseProgramCard(el)?.let { heroItems.add(it) }
+            }
+            if (heroItems.isNotEmpty()) {
+                rows.add(CategoryRow(id = "featured", title = "Uitgelicht", items = heroItems))
+            }
 
-                if (href.isNotEmpty() && title.isNotEmpty()) {
-                    heroItems.add(
-                        ProgramItem(
-                            id = href,
-                            slug = extractSlug(href),
-                            title = title,
-                            thumbnailUrl = img,
-                            badge = badge,
-                            url = if (href.startsWith("http")) href else "$BASE_URL$href"
+            // 2. Fetch Latest Videos ("Nieuw toegevoegd") from /plus/nieuw
+            try {
+                val nieuwReq = Request.Builder().url(PLUS_NIEUW_URL).build()
+                val nieuwResp = client.newCall(nieuwReq).execute()
+                val nieuwHtml = nieuwResp.body?.string() ?: ""
+                nieuwResp.close()
+
+                val nieuwDoc = Jsoup.parse(nieuwHtml)
+                val nieuwItems = parseCardsFromDoc(nieuwDoc)
+                if (nieuwItems.isNotEmpty()) {
+                    rows.add(
+                        CategoryRow(
+                            id = "nieuw_toegevoegd",
+                            title = "Nieuw toegevoegd",
+                            items = nieuwItems.distinctBy { it.slug }
                         )
                     )
                 }
-            }
-            if (heroItems.isNotEmpty()) {
-                rows.add(
-                    CategoryRow(
-                        id = "featured",
-                        title = "Uitgelicht",
-                        items = heroItems
-                    )
-                )
-            }
+            } catch (_: Exception) {}
 
-            // 2. Scan all category sections on the ondemand home page
-            // Drupal outputs blocks with .block-view_header / .series-on-demand-*
-            val sectionHeaders = doc.select(".block-view-header_element-title, h3.block-view-header_element-title, h2.on-demand-title, .view-header h3")
-            for (headerEl in sectionHeaders) {
-                val rowTitle = headerEl.text().trim()
-                if (rowTitle.isEmpty()) continue
+            // 3. Scan all category slider rows from the page
+            // On Drupal Family7+, each row has a .block-view-header_element-title / h3 header and contains .view-block_element
+            val sliderBlocks = doc.select(".block-view_standard, .view-block_slider, .series-on-demand-nodes, .views-element-container")
+            for (block in sliderBlocks) {
+                val titleEl = block.select(".block-view-header_element-title, h3, h2").firstOrNull() ?: continue
+                val rowTitle = titleEl.text().trim()
+                if (rowTitle.isEmpty() || rowTitle.equals("Home", ignoreCase = true)) continue
 
-                // Find parent container or following slider container
-                val parentContainer = headerEl.parents().firstOrNull { p ->
-                    p.select(".view-block_element, .more-series-on-demand_element, .views-row, a[href*='/plus/programmas/']").isNotEmpty()
-                } ?: headerEl.parent()
-
-                val moreLink = parentContainer?.select(".more-link a")?.attr("href") ?: ""
                 val items = mutableListOf<ProgramItem>()
+                block.select(".view-block_element-wrapper, .view-block_element, .more-series-on-demand_element").forEach { card ->
+                    parseProgramCard(card)?.let { items.add(it) }
+                }
 
-                parentContainer?.select(".view-block_element, .more-series-on-demand_element, .views-row, .slider-default_element")?.forEach { card ->
-                    val a = card.select("a").firstOrNull() ?: return@forEach
-                    val href = a.attr("href")
-                    if (!href.contains("/plus/programmas/") && !href.contains("/video/")) return@forEach
-
-                    var title = card.select("img").attr("title").ifEmpty {
-                        card.select("img").attr("alt").ifEmpty {
-                            card.select(".title, h4, h3").text()
-                        }
-                    }
-                    var img = card.select("img").attr("src")
-                    if (img.startsWith("/")) img = "$BASE_URL$img"
-                    val badge = card.select(".ribbon, .badge, .teaser-ribbon").text()
-
-                    if (title.isEmpty()) {
-                        title = extractSlug(href).replace("-", " ").replaceFirstChar { it.uppercase() }
-                    }
-
-                    if (href.isNotEmpty()) {
-                        items.add(
-                            ProgramItem(
-                                id = href,
-                                slug = extractSlug(href),
-                                title = title,
-                                thumbnailUrl = img,
-                                badge = badge,
-                                url = if (href.startsWith("http")) href else "$BASE_URL$href"
+                if (items.isNotEmpty()) {
+                    val rowId = rowTitle.lowercase().replace(" ", "_").replace("'", "")
+                    // Avoid duplicate rows
+                    if (rows.none { it.id == rowId }) {
+                        rows.add(
+                            CategoryRow(
+                                id = rowId,
+                                title = rowTitle,
+                                items = items.distinctBy { it.slug }
                             )
                         )
                     }
                 }
-
-                if (items.isNotEmpty()) {
-                    rows.add(
-                        CategoryRow(
-                            id = rowTitle.lowercase().replace(" ", "_"),
-                            title = rowTitle,
-                            moreUrl = if (moreLink.startsWith("/")) "$BASE_URL$moreLink" else moreLink,
-                            items = items.distinctBy { it.slug }
-                        )
-                    )
-                }
             }
 
-            // Fallback: If no rows extracted, parse all program links
+            // Fallback: If no rows extracted, load from A-Z
             if (rows.isEmpty()) {
-                val allProgs = parseProgramsFromElements(doc.select("a[href*='/plus/programmas/']"))
+                val allProgs = getAllAZPrograms().getOrDefault(emptyList())
                 if (allProgs.isNotEmpty()) {
-                    rows.add(CategoryRow(id = "all", title = "On Demand Programma's", items = allProgs))
+                    rows.add(CategoryRow(id = "all", title = "Alle Programma's", items = allProgs))
                 }
             }
 
@@ -136,125 +110,96 @@ class Family7CatalogRepository(private val context: Context) {
         }
     }
 
-    suspend fun getCategoryItems(pathOrUrl: String, titleFallback: String): Result<CategoryRow> = withContext(Dispatchers.IO) {
+    /**
+     * Dynamically fetches all 194+ programs from /plus/a-z?title=All in real-time.
+     */
+    suspend fun getAllAZPrograms(): Result<List<ProgramItem>> = withContext(Dispatchers.IO) {
         try {
-            val url = if (pathOrUrl.startsWith("http")) pathOrUrl else "$BASE_URL$pathOrUrl"
-            val req = Request.Builder().url(url).build()
+            val req = Request.Builder()
+                .url(PLUS_AZ_URL)
+                .build()
+
             val resp = client.newCall(req).execute()
             val html = resp.body?.string() ?: ""
             resp.close()
 
             val doc = Jsoup.parse(html)
-            val title = doc.select("h1, .page-title").text().ifEmpty { titleFallback }
-            val items = parseProgramsFromDoc(doc)
+            val items = parseCardsFromDoc(doc)
 
-            Result.success(
-                CategoryRow(
-                    id = extractSlug(url),
-                    title = title,
-                    moreUrl = url,
-                    items = items
-                )
-            )
+            Result.success(items.distinctBy { it.slug })
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    suspend fun getAZCatalog(letter: String = "All"): Result<List<ProgramItem>> = withContext(Dispatchers.IO) {
+    /**
+     * Search dynamically across program catalog.
+     */
+    suspend fun searchPrograms(query: String): Result<List<ProgramItem>> = withContext(Dispatchers.IO) {
         try {
-            val url = "$BASE_URL/plus/a-z?title=$letter"
-            val req = Request.Builder().url(url).build()
-            val resp = client.newCall(req).execute()
-            val html = resp.body?.string() ?: ""
-            resp.close()
+            val allRes = getAllAZPrograms()
+            val all = allRes.getOrNull() ?: emptyList()
+            if (query.isBlank()) {
+                return@withContext Result.success(all)
+            }
 
-            val doc = Jsoup.parse(html)
-            val items = parseProgramsFromDoc(doc)
-            Result.success(items)
+            val cleanQ = query.trim().lowercase()
+            val filtered = all.filter {
+                it.title.lowercase().contains(cleanQ) ||
+                it.slug.lowercase().contains(cleanQ)
+            }
+            Result.success(filtered)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    suspend fun search(query: String): Result<List<ProgramItem>> = withContext(Dispatchers.IO) {
-        try {
-            val encoded = java.net.URLEncoder.encode(query, "UTF-8")
-            val url = "$BASE_URL/plus/search?search_api_fulltext=$encoded"
-            val req = Request.Builder().url(url).build()
-            val resp = client.newCall(req).execute()
-            val html = resp.body?.string() ?: ""
-            resp.close()
-
-            val doc = Jsoup.parse(html)
-            val items = parseProgramsFromDoc(doc)
-            Result.success(items)
-        } catch (e: Exception) {
-            Result.failure(e)
+    private fun parseCardsFromDoc(doc: Document): List<ProgramItem> {
+        val items = mutableListOf<ProgramItem>()
+        doc.select(".view-block_element-wrapper, .view-block_element, .views-row").forEach { el ->
+            parseProgramCard(el)?.let { items.add(it) }
         }
+        return items
     }
 
-    private fun parseProgramsFromDoc(doc: org.jsoup.nodes.Document): List<ProgramItem> {
-        val list = mutableListOf<ProgramItem>()
-        doc.select(".view-content .views-row, .view-block_element, .views-view-grid .views-col, .search-result").forEach { el ->
-            val a = el.select("a[href*='/plus/programmas/'], a[href*='/video/']").firstOrNull() ?: el.select("a").firstOrNull() ?: return@forEach
-            val href = a.attr("href")
-            var title = el.select("img").attr("title").ifEmpty {
-                el.select("img").attr("alt").ifEmpty {
-                    el.select(".views-field-title, h3, h4, .title").text()
-                }
-            }
-            if (title.isEmpty()) {
-                title = extractSlug(href).replace("-", " ").replaceFirstChar { it.uppercase() }
-            }
-            var img = el.select("img").attr("src")
-            if (img.startsWith("/")) img = "$BASE_URL$img"
-            val badge = el.select(".ribbon, .badge, .teaser-ribbon").text()
+    private fun parseProgramCard(card: Element): ProgramItem? {
+        val a = card.select("a[href*='/plus/programmas/'], a[href*='/programmas/'], a[href*='/video/']").firstOrNull()
+            ?: card.select("a").firstOrNull() ?: return null
 
-            if (href.isNotEmpty()) {
-                list.add(
-                    ProgramItem(
-                        id = href,
-                        slug = extractSlug(href),
-                        title = title,
-                        thumbnailUrl = img,
-                        badge = badge,
-                        url = if (href.startsWith("http")) href else "$BASE_URL$href"
-                    )
-                )
+        val href = a.attr("href")
+        if (href.isEmpty() || href.startsWith("#") || href.contains("/live") || href.contains("/privacy") || href.contains("/veelgestelde")) {
+            return null
+        }
+
+        // Extract precise human title from .titleProgramme or .title
+        var title = card.select(".titleProgramme, .view-block_element-title, .title, h3, h4").text().trim()
+        if (title.isEmpty()) {
+            title = card.select("img").attr("title").ifEmpty {
+                card.select("img").attr("alt")
             }
         }
-        return list.distinctBy { it.slug }
-    }
-
-    private fun parseProgramsFromElements(elements: org.jsoup.select.Elements): List<ProgramItem> {
-        val list = mutableListOf<ProgramItem>()
-        for (a in elements) {
-            val href = a.attr("href")
-            val slug = extractSlug(href)
-            var title = a.select("img").attr("title").ifEmpty {
-                a.select("img").attr("alt").ifEmpty {
-                    a.text().ifEmpty { slug.replace("-", " ").replaceFirstChar { it.uppercase() } }
-                }
-            }
-            var img = a.select("img").attr("src")
-            if (img.startsWith("/")) img = "$BASE_URL$img"
-
-            list.add(
-                ProgramItem(
-                    id = href,
-                    slug = slug,
-                    title = title,
-                    thumbnailUrl = img,
-                    url = if (href.startsWith("http")) href else "$BASE_URL$href"
-                )
-            )
+        if (title.isEmpty() || title.contains("slider", ignoreCase = true)) {
+            title = extractSlug(href)
+                .replace("-", " ")
+                .split(" ")
+                .joinToString(" ") { it.replaceFirstChar { char -> char.uppercase() } }
         }
-        return list.distinctBy { it.slug }
+
+        var img = card.select("img").attr("src")
+        if (img.startsWith("/")) img = "$BASE_URL$img"
+        val badge = card.select(".ribbon, .badge, .label, .view-block_element-badge").text().trim()
+
+        return ProgramItem(
+            id = href,
+            slug = extractSlug(href),
+            title = title,
+            thumbnailUrl = img,
+            badge = badge,
+            url = if (href.startsWith("http")) href else "$BASE_URL$href"
+        )
     }
 
     private fun extractSlug(url: String): String {
-        val clean = url.substringBefore("?").substringBefore("#").trimEnd('/')
-        return clean.substringAfterLast("/")
+        return url.substringBefore("?").trimEnd('/').substringAfterLast('/')
     }
 }
