@@ -12,3 +12,8 @@ build/
 *.aab
 ._*
 .spotless
+
+# Ondertekeningsgegevens - nooit committen
+keystore.properties
+keystore/
+*.jks

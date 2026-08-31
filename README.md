@@ -86,6 +86,28 @@ De app biedt volledige ondersteuning voor zowel **Live TV** (Family7 Plus livest
 
 ---
 
+## 🔑 Release bouwen
+
+De release-build wordt ondertekend met een eigen sleutel; de gegevens staan in
+`keystore.properties` in de projectmap. Dat bestand en de keystore staan in
+`.gitignore` en horen niet in de repo:
+
+```properties
+storeFile=keystore/family7-release.jks
+storePassword=...
+keyAlias=family7
+keyPassword=...
+```
+
+Ontbreekt `keystore.properties`, dan bouwt `./gradlew assembleRelease` gewoon
+door, maar levert het een niet-ondertekende APK op. Bewaar een kopie van de
+keystore op een veilige plek: zonder die sleutel kan een update niet over een
+bestaande installatie heen.
+
+De release-build gebruikt R8 met resource shrinking (16,1 MB → 2,7 MB). De
+bewaarregels in `app/proguard-rules.pro` beschermen Jsoup, dat de HTML van
+family7.nl leest.
+
 ## 🛠️ Architectuur & Tech Stack
 
 | Component | Technologie |
