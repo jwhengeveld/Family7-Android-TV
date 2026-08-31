@@ -92,13 +92,21 @@ jobs:
           retention-days: 14
 
       # Een tag v* levert meteen een release met de ondertekende APK erbij.
-      - name: Attach APK to Release
+      - name: Publish Release with APK
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          gh release upload "$GITHUB_REF_NAME" "family7-androidtv-v${VERSION}.apk" --clobber
+          APK="family7-androidtv-v${VERSION}.apk"
+          # Maak de release aan als hij nog niet bestaat; anders alleen de APK erbij.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$APK" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$APK" \
+              --title "Family7 Android TV $GITHUB_REF_NAME" \
+              --generate-notes
+          fi
 
       - name: Clean Up Signing Key
         if: always()
