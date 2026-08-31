@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -95,11 +96,11 @@ fun HomeScreen(
         isLoading = true
         val res = catalogRepo.getOnDemandHome()
         res.onSuccess { rows ->
-            categoryRows = rows
-            val firstRow = rows.firstOrNull()
-            if (firstRow != null && firstRow.items.isNotEmpty()) {
-                featuredProgram = firstRow.items.first()
-            }
+            // De uitgelichte kop vult de banner en wordt daarom niet nog eens
+            // als rij getoond.
+            featuredProgram = rows.firstOrNull { it.id == "uitgelicht" }?.items?.firstOrNull()
+                ?: rows.firstOrNull()?.items?.firstOrNull()
+            categoryRows = rows.filterNot { it.id == "uitgelicht" }
             isLoading = false
         }.onFailure {
             errorMessage = it.message
@@ -374,11 +375,24 @@ fun HeroBanner(
             Text(
                 text = program.title,
                 color = TextPrimary,
-                fontSize = 28.sp,
+                fontSize = 30.sp,
                 fontWeight = FontWeight.Bold
             )
 
-            Spacer(modifier = Modifier.height(14.dp))
+            if (program.description.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = program.description,
+                    color = TextSecondary,
+                    fontSize = 15.sp,
+                    lineHeight = 21.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(0.52f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TVButton(

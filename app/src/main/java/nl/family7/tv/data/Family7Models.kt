@@ -24,7 +24,10 @@ data class ProgramItem(
     val title: String,
     val thumbnailUrl: String,
     val badge: String = "",
-    val url: String = ""
+    val url: String = "",
+    val description: String = "",
+    /** Drupal node-id, nodig om het programma aan "Mijn lijst" toe te voegen. */
+    val nodeId: String = ""
 )
 
 data class CategoryRow(
@@ -46,6 +49,10 @@ data class EpisodeItem(
     var streamUrl: String = ""
 )
 
+/** "Afl. 3: Titel", of alleen de titel als de aflevering geen nummer heeft. */
+fun EpisodeItem.displayLabel(): String =
+    if (episodeNumber.isBlank()) title else "Afl. $episodeNumber: $title"
+
 data class SeasonInfo(
     val seasonNumber: String,
     val title: String,
@@ -58,7 +65,11 @@ data class ProgramDetail(
     val posterUrl: String,
     val description: String,
     val category: String = "",
-    val seasons: List<SeasonInfo> = emptyList()
+    val seasons: List<SeasonInfo> = emptyList(),
+    /** Drupal node-id van het programma, gelezen uit de "Mijn lijst"-knop. */
+    val nodeId: String = "",
+    /** Of Family7 dit programma al in de lijst van dit account heeft staan. */
+    val isInMyList: Boolean = false
 )
 
 data class PlayableMedia(

@@ -107,20 +107,20 @@ fun Family7TVApp(
     val myList by myListRepo.items.collectAsState()
     val scope = rememberCoroutineScope()
 
-    // Bestaande sessie controleren en de lijst van dat account inladen
+    // Bestaande sessie controleren en de lijst van het account ophalen bij Family7
     LaunchedEffect(Unit) {
         val session = authRepo.checkSession()
         currentSession = session
-        myListRepo.load(session.uid)
-        screenState = if (session.isLoggedIn) {
-            ScreenState.Home
+        if (session.isLoggedIn) {
+            myListRepo.refresh()
+            screenState = ScreenState.Home
         } else {
-            ScreenState.Login
+            screenState = ScreenState.Login
         }
     }
 
-    fun toggleMyList(item: ProgramItem) {
-        scope.launch { myListRepo.toggle(item) }
+    fun toggleMyList(detail: ProgramDetail, add: Boolean) {
+        scope.launch { myListRepo.setInList(detail.nodeId, add) }
     }
 
     when (val state = screenState) {
@@ -130,7 +130,7 @@ fun Family7TVApp(
                 authRepo = authRepo,
                 onLoginSuccess = { session ->
                     currentSession = session
-                    scope.launch { myListRepo.load(session.uid) }
+                    scope.launch { myListRepo.refresh() }
                     screenState = ScreenState.Home
                 }
             )
@@ -150,7 +150,7 @@ fun Family7TVApp(
                 onLogout = {
                     authRepo.logout()
                     currentSession = null
-                    scope.launch { myListRepo.load("") }
+                    myListRepo.clear()
                     screenState = ScreenState.Login
                 }
             )
@@ -234,13 +234,15 @@ fun Family7TVApp(
             BackHandler {
                 screenState = ScreenState.Home
             }
+            LaunchedEffect(Unit) { myListRepo.refresh() }
             ProgramGridScreen(
                 title = "Mijn lijst",
                 subtitle = "Uw opgeslagen programma's",
                 programs = myList,
                 isLoading = false,
                 errorMessage = null,
-                emptyMessage = "Uw lijst is nog leeg. Open een programma en kies \"Mijn lijst\" om het hier te bewaren.",
+                emptyMessage = "Uw lijst is nog leeg. Open een programma en kies \"Mijn lijst\"; " +
+                    "die lijst deelt u met de website van Family7.",
                 onSelectProgram = { program ->
                     screenState = ScreenState.ProgramDetailView(program)
                 },

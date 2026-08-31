@@ -28,29 +28,32 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import nl.family7.tv.ui.theme.DarkSurface
-import nl.family7.tv.ui.theme.DarkSurfaceVariant
 
 /**
  * Een rustig doorlopend glanseffect, zodat een laadscherm de uiteindelijke
  * indeling al toont in plaats van een leeg vlak met een draaiend wieltje.
  */
+// De grondtoon moet duidelijk lichter zijn dan de paginakleur (#031A38), anders
+// is een plaatshouder niet van een lege pagina te onderscheiden.
+private val SkeletonBase = Color(0xFF0C2B52)
+private val SkeletonHighlight = Color(0xFF1B4C82)
+
 @Composable
 private fun shimmerBrush(): Brush {
     val transition = rememberInfiniteTransition(label = "shimmer")
     val offset by transition.animateFloat(
-        initialValue = -900f,
-        targetValue = 1500f,
+        initialValue = -1400f,
+        targetValue = 2600f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1500),
+            animation = tween(durationMillis = 1600),
             repeatMode = RepeatMode.Restart
         ),
         label = "shimmerOffset"
     )
     return Brush.linearGradient(
-        colors = listOf(DarkSurface, DarkSurfaceVariant, DarkSurface),
+        colors = listOf(SkeletonBase, SkeletonHighlight, SkeletonBase),
         start = Offset(offset, 0f),
-        end = Offset(offset + 600f, 0f)
+        end = Offset(offset + 1200f, 0f)
     )
 }
 

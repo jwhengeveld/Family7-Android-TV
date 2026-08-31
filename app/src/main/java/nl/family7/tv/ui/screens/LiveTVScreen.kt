@@ -21,6 +21,13 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -37,6 +44,8 @@ import nl.family7.tv.ui.player.KeepScreenOn
 import nl.family7.tv.ui.player.PauseOnBackground
 import nl.family7.tv.ui.player.buildPlayer
 import nl.family7.tv.ui.player.buildPlayerView
+import nl.family7.tv.ui.player.ensureRemoteControlFocus
+import nl.family7.tv.ui.player.handleRemoteKey
 import nl.family7.tv.ui.player.rememberMediaSession
 import nl.family7.tv.ui.player.setPlayerLabels
 
@@ -51,6 +60,7 @@ fun LiveTVScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableIntStateOf(0) }
     val currentOnBack by rememberUpdatedState(onBack)
+    val playerFocus = remember { FocusRequester() }
 
     val exoPlayer = remember { buildPlayer(context) }
     val playerView = remember {
@@ -75,8 +85,9 @@ fun LiveTVScreen(
     }
 
     LaunchedEffect(playerView) {
+        runCatching { playerFocus.requestFocus() }
         playerView.setPlayerLabels("Family7 Live TV", "")
-        playerView.requestFocus()
+        playerView.ensureRemoteControlFocus()
     }
 
     // De programmagids staat in de bedieningslayout, onder de terugknop.
@@ -141,8 +152,18 @@ fun LiveTVScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
+            .focusRequester(playerFocus)
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                playerView.handleRemoteKey(event.key.keyCode, allowSeek = false)
+            }
     ) {
-        AndroidView(factory = { playerView }, modifier = Modifier.fillMaxSize())
+        AndroidView(
+            factory = { playerView },
+            update = { it.ensureRemoteControlFocus() },
+            modifier = Modifier.fillMaxSize()
+        )
 
         if (errorMessage != null) {
             Box(

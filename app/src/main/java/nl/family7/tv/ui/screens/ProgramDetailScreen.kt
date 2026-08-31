@@ -58,13 +58,14 @@ fun ProgramDetailScreen(
     programItem: ProgramItem,
     videoRepo: Family7VideoRepository,
     isInMyList: Boolean,
-    onToggleMyList: (ProgramItem) -> Unit,
+    onToggleMyList: (ProgramDetail, Boolean) -> Unit,
     onPlayEpisode: (EpisodeItem, ProgramDetail) -> Unit,
     onBack: () -> Unit
 ) {
     var programDetail by remember { mutableStateOf<ProgramDetail?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var pendingInList by remember(programItem.slug) { mutableStateOf<Boolean?>(null) }
 
     LaunchedEffect(programItem.slug) {
         isLoading = true
@@ -185,7 +186,7 @@ fun ProgramDetailScreen(
                                 val firstEpisode = detail.seasons.firstOrNull()?.episodes?.firstOrNull()
                                 if (firstEpisode != null) {
                                     TVButton(
-                                        text = "AFSPELEN (Afl. ${firstEpisode.episodeNumber})",
+                                        text = if (firstEpisode.episodeNumber.isBlank()) "AFSPELEN" else "AFSPELEN (Afl. ${firstEpisode.episodeNumber})",
                                         onClick = { onPlayEpisode(firstEpisode, detail) },
                                         leadingIcon = {
                                             Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
@@ -193,25 +194,26 @@ fun ProgramDetailScreen(
                                     )
                                 }
 
-                                TVButton(
-                                    text = if (isInMyList) "IN MIJN LIJST" else "MIJN LIJST",
-                                    onClick = {
-                                        onToggleMyList(
-                                            programItem.copy(
-                                                title = detail.title.ifEmpty { programItem.title },
-                                                thumbnailUrl = detail.posterUrl.ifEmpty { programItem.thumbnailUrl }
+                                // De site kent de lijststatus; na een wijziging telt
+                                // de status die deze app zojuist heeft doorgegeven.
+                                val inList = pendingInList ?: (isInMyList || detail.isInMyList)
+                                if (detail.nodeId.isNotEmpty()) {
+                                    TVButton(
+                                        text = if (inList) "IN MIJN LIJST" else "MIJN LIJST",
+                                        onClick = {
+                                            pendingInList = !inList
+                                            onToggleMyList(detail, !inList)
+                                        },
+                                        isPrimary = false,
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = if (inList) Icons.Default.Check else Icons.Default.Add,
+                                                contentDescription = null,
+                                                tint = Color.White
                                             )
-                                        )
-                                    },
-                                    isPrimary = false,
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = if (isInMyList) Icons.Default.Check else Icons.Default.Add,
-                                            contentDescription = null,
-                                            tint = Color.White
-                                        )
-                                    }
-                                )
+                                        }
+                                    )
+                                }
                             }
                         }
                     }

@@ -24,56 +24,47 @@ class Family7VideoRepository(appContext: Context) {
             val html = resp.body?.string() ?: ""
             resp.close()
 
-            val doc = Jsoup.parse(html)
-            val title = doc.select(".series-page-title, h1.on-demand-title, .page-title, h1").text().ifEmpty {
-                slug.replace("-", " ").replaceFirstChar { it.uppercase() }
-            }
-            var posterUrl = doc.select(".series-page-image img, .hero-slider_element img, .main-image img").attr("src")
+            val doc = Jsoup.parse(html, url)
+
+            // De programmapagina heeft geen kop met de naam erin; die staat in de
+            // paginatitel en anders af te leiden uit het adres.
+            val title = doc.selectFirst("meta[property=og:title]")?.attr("content")?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: doc.title().substringBefore("|").trim().takeIf { it.isNotEmpty() }
+                ?: slug.replace('-', ' ').replaceFirstChar { it.uppercase() }
+
+            var posterUrl = doc.selectFirst(
+                ".video-page-top-content img, .series-page-image img, .main-image img"
+            )?.attr("src").orEmpty()
             if (posterUrl.startsWith("/")) posterUrl = "$BASE_URL$posterUrl"
 
-            val description = doc.select(".series-page-description, .field--name-body, .series-description, .content-body p").text()
-            val category = doc.select(".series-page-category, .field--name-field-category").text()
+            val description = doc.selectFirst(".introduction, .series-page-description, .field--name-body")
+                ?.text()?.trim().orEmpty()
+            val category = doc.selectFirst(".series-info")?.text()?.trim().orEmpty()
 
-            val episodes = mutableListOf<EpisodeItem>()
+            // De "Mijn lijst"-knop van de site draagt het node-id en, via de
+            // klasse "added", of het programma al in de lijst van dit account staat.
+            val myListButton = doc.selectFirst(".process-to-my-series-list, [data-node-id]")
+            val nodeId = myListButton?.attr("data-node-id").orEmpty()
+            val isInMyList = myListButton?.hasClass("added") == true
 
-            // Find all episode elements or video links on the program page
-            doc.select(".views-row, .view-block_element, .episode-item, .series-episodes_element, a[href*='/video/']").forEachIndexed { idx, el ->
-                val a = el.select("a[href*='/video/']").firstOrNull() ?: if (el.tagName() == "a" && el.attr("href").contains("/video/")) el else null
-                if (a != null) {
-                    val href = a.attr("href")
-                    val epSlug = href.substringAfterLast("/").substringBefore("?")
-                    var epTitle = el.select(".episode-title, .views-field-title, h3, h4, .title").text().ifEmpty {
-                        a.select("img").attr("title").ifEmpty {
-                            a.select("img").attr("alt").ifEmpty {
-                                "Aflevering ${idx + 1}"
-                            }
-                        }
-                    }
-                    val epNumber = el.select(".episode-number, .views-field-field-episode-number").text().ifEmpty {
-                        "${idx + 1}"
-                    }
-                    val epDesc = el.select(".episode-description, .views-field-body, p").text()
-                    val duration = el.select(".duration, .time, .views-field-field-duration").text()
-                    var epThumb = el.select("img").attr("src")
-                    if (epThumb.startsWith("/")) epThumb = "$BASE_URL$epThumb"
+            val episodes = doc.select(".view-block_element-wrapper, .view-block_element")
+                .mapNotNull { card -> parseEpisode(card, posterUrl) }
+                .distinctBy { it.videoSlug }
 
-                    episodes.add(
-                        EpisodeItem(
-                            id = epSlug,
-                            episodeNumber = epNumber,
-                            title = epTitle,
-                            description = epDesc,
-                            duration = duration,
-                            thumbnailUrl = epThumb.ifEmpty { posterUrl },
-                            videoSlug = epSlug,
-                            videoUrl = if (href.startsWith("http")) href else "$BASE_URL$href"
-                        )
-                    )
-                }
-            }
+            // De seizoenkiezer van de site geeft aan welk seizoen op deze pagina staat.
+            val seasonSelect = doc.selectFirst(".more-videos_season-select")
+            val seasonNumber = seasonSelect?.selectFirst("option[selected]")?.attr("value")
+                ?.takeIf { it.isNotEmpty() }
+                ?: seasonSelect?.selectFirst("option")?.attr("value")
+                ?: "1"
+            val seasonLabel = seasonSelect?.selectFirst("option[selected]")?.text()?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: seasonSelect?.selectFirst("option")?.text()?.trim()
+                ?: "Afleveringen"
 
             val seasons = if (episodes.isNotEmpty()) {
-                listOf(SeasonInfo(seasonNumber = "1", title = "Afleveringen", episodes = episodes.distinctBy { it.videoSlug }))
+                listOf(SeasonInfo(seasonNumber = seasonNumber, title = seasonLabel, episodes = episodes))
             } else {
                 emptyList()
             }
@@ -85,12 +76,55 @@ class Family7VideoRepository(appContext: Context) {
                     posterUrl = posterUrl,
                     description = description,
                     category = category,
-                    seasons = seasons
+                    seasons = seasons,
+                    nodeId = nodeId,
+                    isInMyList = isInMyList
                 )
             )
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    /**
+     * Een afleveringskaart zoals de site die opbouwt: het nummer staat in
+     * `.video-number`, de titel links en de speelduur rechts in `.video-title`.
+     * De tweede afbeelding in de kaart is het kijkwijzer-icoon, niet de
+     * aflevering, dus daar mag de titel niet vandaan komen.
+     */
+    private fun parseEpisode(card: org.jsoup.nodes.Element, fallbackThumb: String): EpisodeItem? {
+        val a = card.selectFirst("a[href*='/video/']") ?: return null
+        val href = a.attr("href")
+        val epSlug = href.substringBefore("?").trimEnd('/').substringAfterLast('/')
+        if (epSlug.isEmpty()) return null
+
+        val titleBlock = card.selectFirst(".video-title")
+        val epTitle = titleBlock?.selectFirst(".float-left")?.text()?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: titleBlock?.ownText()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: card.selectFirst(".view-block_element-title")?.text()?.trim().orEmpty()
+                .ifEmpty { "Aflevering" }
+
+        val duration = titleBlock?.selectFirst(".float-right")?.text()?.trim().orEmpty()
+        val number = card.selectFirst(".video-number")?.text()?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            // Het adres van een aflevering heeft de vorm {seizoen}-{nummer}-{slug}.
+            ?: epSlug.split("-").getOrNull(1)?.takeIf { it.all(Char::isDigit) }
+            ?: ""
+
+        var thumb = card.selectFirst(".view-block_element-thumbnail > img")?.attr("src").orEmpty()
+        if (thumb.startsWith("/")) thumb = "$BASE_URL$thumb"
+
+        return EpisodeItem(
+            id = epSlug,
+            episodeNumber = number,
+            title = epTitle,
+            description = card.selectFirst(".video-description")?.text()?.trim().orEmpty(),
+            duration = duration,
+            thumbnailUrl = thumb.ifEmpty { fallbackThumb },
+            videoSlug = epSlug,
+            videoUrl = if (href.startsWith("http")) href else "$BASE_URL$href"
+        )
     }
 
     suspend fun resolveEpisodeStreamUrl(videoSlugOrUrl: String): Result<String> = withContext(Dispatchers.IO) {

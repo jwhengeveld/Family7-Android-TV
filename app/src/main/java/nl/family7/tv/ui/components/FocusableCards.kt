@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import nl.family7.tv.data.EpisodeItem
+import nl.family7.tv.data.displayLabel
 import nl.family7.tv.data.ProgramItem
 import nl.family7.tv.ui.theme.DarkSurfaceVariant
 import nl.family7.tv.ui.theme.Family7Red
@@ -186,7 +187,7 @@ fun TVEpisodeCard(
 
             Column(modifier = Modifier.padding(10.dp)) {
                 Text(
-                    text = "Afl. ${episode.episodeNumber}: ${episode.title}",
+                    text = episode.displayLabel(),
                     color = if (isFocused) Family7Red else TextPrimary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,

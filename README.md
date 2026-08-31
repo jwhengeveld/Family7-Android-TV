@@ -42,8 +42,10 @@ De app biedt volledige ondersteuning voor zowel **Live TV** (Family7 Plus livest
   - Eigen ingang naar de Family7+ specialpagina met kinderprogramma's.
   - Het adres van die pagina wordt in het menu van Family7+ opgezocht, dus een
     hernoeming of verhuizing aan de kant van Family7 gaat vanzelf mee.
-- 🔖 **Mijn lijst**
-  - Programma's bewaren vanaf de programmapagina, per ingelogd account.
+- 🔖 **Mijn lijst (dezelfde lijst als op de site)**
+  - Gekoppeld aan Family7 zelf: de app leest /plus/mijnlijst en gebruikt hetzelfde
+    eindpunt als de knop op de website, dus wat u hier bewaart staat ook op
+    family7.nl en op uw andere apparaten.
   - Verschijnt als eerste rij op het startscherm en als eigen overzicht in de zijbalk.
 - 🔍 **A-Z Catalogus & Zoeken**
   - Snel alfabetisch filteren op alle beschikbare programma's, inclusief
