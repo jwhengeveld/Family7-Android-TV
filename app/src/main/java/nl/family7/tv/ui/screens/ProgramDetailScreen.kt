@@ -62,13 +62,16 @@ fun ProgramDetailScreen(
     onPlayEpisode: (EpisodeItem, ProgramDetail) -> Unit,
     onBack: () -> Unit
 ) {
-    var programDetail by remember { mutableStateOf<ProgramDetail?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
+    // Eerder geopende programma's komen meteen uit de cache; anders een laadscherm.
+    var programDetail by remember(programItem.slug) {
+        mutableStateOf(videoRepo.cachedDetail(programItem.slug))
+    }
+    var isLoading by remember(programItem.slug) { mutableStateOf(programDetail == null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var pendingInList by remember(programItem.slug) { mutableStateOf<Boolean?>(null) }
 
     LaunchedEffect(programItem.slug) {
-        isLoading = true
+        if (programDetail == null) isLoading = true
         val res = videoRepo.getProgramDetail(programItem.slug)
         res.onSuccess {
             programDetail = it

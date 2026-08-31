@@ -43,6 +43,10 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import nl.family7.tv.data.CategoryRow
+import nl.family7.tv.data.BACKGROUND_REFRESH_MS
 import nl.family7.tv.data.Family7CatalogRepository
 import nl.family7.tv.data.ProgramItem
 import nl.family7.tv.ui.components.Family7Mark
@@ -85,26 +90,48 @@ fun HomeScreen(
     onNavigateToMyList: () -> Unit,
     onLogout: () -> Unit
 ) {
-    var categoryRows by remember { mutableStateOf<List<CategoryRow>>(emptyList()) }
-    var featuredProgram by remember { mutableStateOf<ProgramItem?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
+    // Meteen vullen uit de cache in het geheugen; alleen een laadscherm tonen als
+    // er nog niets bekend is. Daarna wordt er stil op de achtergrond ververst.
+    val cached = remember { catalogRepo.homeCache.snapshot() }
+    var categoryRows by remember { mutableStateOf(cached?.filterNot { it.id == "uitgelicht" } ?: emptyList()) }
+    var featuredProgram by remember {
+        mutableStateOf(
+            cached?.firstOrNull { it.id == "uitgelicht" }?.items?.firstOrNull()
+                ?: cached?.firstOrNull()?.items?.firstOrNull()
+        )
+    }
+    var isLoading by remember { mutableStateOf(cached == null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var selectedNav by remember { mutableStateOf(NavDestination.ON_DEMAND) }
     var reloadKey by remember { mutableIntStateOf(0) }
 
+    // De uitgelichte kop vult de banner en wordt daarom niet nog eens als rij getoond.
+    fun applyRows(rows: List<CategoryRow>) {
+        featuredProgram = rows.firstOrNull { it.id == "uitgelicht" }?.items?.firstOrNull()
+            ?: rows.firstOrNull()?.items?.firstOrNull()
+        categoryRows = rows.filterNot { it.id == "uitgelicht" }
+    }
+
     LaunchedEffect(reloadKey) {
-        isLoading = true
-        val res = catalogRepo.getOnDemandHome()
-        res.onSuccess { rows ->
-            // De uitgelichte kop vult de banner en wordt daarom niet nog eens
-            // als rij getoond.
-            featuredProgram = rows.firstOrNull { it.id == "uitgelicht" }?.items?.firstOrNull()
-                ?: rows.firstOrNull()?.items?.firstOrNull()
-            categoryRows = rows.filterNot { it.id == "uitgelicht" }
-            isLoading = false
-        }.onFailure {
-            errorMessage = it.message
-            isLoading = false
+        if (categoryRows.isEmpty() && featuredProgram == null) isLoading = true
+        catalogRepo.getOnDemandHome(forceRefresh = reloadKey > 0)
+            .onSuccess { applyRows(it); isLoading = false }
+            .onFailure { errorMessage = it.message; isLoading = false }
+    }
+
+    // Stil verversen zolang Home op de voorgrond staat, zodat nieuwe programma's
+    // vanzelf verschijnen. repeatOnLifecycle pauzeert dit in de achtergrond en
+    // hervat het bij terugkeer; dan wordt meteen ververst als de cache muf is.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(Unit) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            if (catalogRepo.homeCache.fresh() == null) {
+                catalogRepo.getOnDemandHome(forceRefresh = true).onSuccess { applyRows(it) }
+            }
+            while (true) {
+                delay(BACKGROUND_REFRESH_MS)
+                catalogRepo.getOnDemandHome(forceRefresh = true).onSuccess { applyRows(it) }
+            }
         }
     }
 

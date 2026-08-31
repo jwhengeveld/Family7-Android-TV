@@ -54,9 +54,10 @@ fun SearchScreen(
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("Alles") }
-    var allPrograms by remember { mutableStateOf<List<ProgramItem>>(emptyList()) }
-    var displayedResults by remember { mutableStateOf<List<ProgramItem>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
+    val cachedAz = remember { catalogRepo.azCache.snapshot() ?: emptyList() }
+    var allPrograms by remember { mutableStateOf(cachedAz) }
+    var displayedResults by remember { mutableStateOf(cachedAz) }
+    var isLoading by remember { mutableStateOf(cachedAz.isEmpty()) }
 
     val quickFilters = listOf(
         "Alles", "A-Z", "0-9", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
@@ -65,7 +66,7 @@ fun SearchScreen(
 
     // Load entire dynamic live catalog from Family7
     LaunchedEffect(Unit) {
-        isLoading = true
+        if (allPrograms.isEmpty()) isLoading = true
         val res = catalogRepo.getAllAZPrograms()
         res.onSuccess { programs ->
             // Het A-Z overzicht kan hetzelfde programma meermaals bevatten.

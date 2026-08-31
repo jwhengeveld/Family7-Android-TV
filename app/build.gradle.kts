@@ -25,8 +25,8 @@ android {
         applicationId = "nl.family7.tv"
         minSdk = 24
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.1.1"
+        versionCode = 4
+        versionName = "1.1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

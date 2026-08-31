@@ -151,6 +151,7 @@ fun Family7TVApp(
                     authRepo.logout()
                     currentSession = null
                     myListRepo.clear()
+                    catalogRepo.clearMemoryCache()
                     screenState = ScreenState.Login
                 }
             )
@@ -258,15 +259,16 @@ private fun KidsScreen(
     onSelectProgram: (ProgramItem) -> Unit,
     onBack: () -> Unit
 ) {
-    var programs by remember { mutableStateOf<List<ProgramItem>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
+    val cachedKids = remember { catalogRepo.kidsCache.snapshot() ?: emptyList() }
+    var programs by remember { mutableStateOf(cachedKids) }
+    var isLoading by remember { mutableStateOf(cachedKids.isEmpty()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(reloadKey) {
-        isLoading = true
+        if (programs.isEmpty()) isLoading = true
         errorMessage = null
-        catalogRepo.getKidsPrograms()
+        catalogRepo.getKidsPrograms(forceRefresh = reloadKey > 0)
             .onSuccess {
                 programs = it
                 isLoading = false

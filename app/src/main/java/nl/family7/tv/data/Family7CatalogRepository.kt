@@ -24,6 +24,19 @@ class Family7CatalogRepository(appContext: Context) {
     /** Onthoudt gevonden specialpagina's, als terugval wanneer de pagina niet leesbaar is. */
     private val cache = context.getSharedPreferences("family7_catalog_cache", Context.MODE_PRIVATE)
 
+    // Cache in het geheugen: laat een scherm meteen de vorige inhoud tonen en
+    // ververst stil op de achtergrond.
+    val homeCache = TimedCache<List<CategoryRow>>(CATALOG_TTL_MS)
+    val azCache = TimedCache<List<ProgramItem>>(CATALOG_TTL_MS)
+    val kidsCache = TimedCache<List<ProgramItem>>(CATALOG_TTL_MS)
+
+    /** Wist de cache in het geheugen, bijvoorbeeld na uitloggen. */
+    fun clearMemoryCache() {
+        homeCache.clear()
+        azCache.clear()
+        kidsCache.clear()
+    }
+
     companion object {
         private const val BASE_URL = "https://www.family7.nl"
         private const val PLUS_HOME_URL = "$BASE_URL/plus"
@@ -48,7 +61,8 @@ class Family7CatalogRepository(appContext: Context) {
      * De volledige On Demand startpagina: de uitgelichte kop, "Nieuw toegevoegd"
      * en elke categorierij die Family7 op dat moment toont.
      */
-    suspend fun getOnDemandHome(): Result<List<CategoryRow>> = withContext(Dispatchers.IO) {
+    suspend fun getOnDemandHome(forceRefresh: Boolean = false): Result<List<CategoryRow>> = withContext(Dispatchers.IO) {
+        if (!forceRefresh) homeCache.fresh()?.let { return@withContext Result.success(it) }
         try {
             val doc = fetchDocument(PLUS_HOME_URL)
             val rows = mutableListOf<CategoryRow>()
@@ -82,6 +96,7 @@ class Family7CatalogRepository(appContext: Context) {
                 }
             }
 
+            homeCache.put(rows)
             Result.success(rows)
         } catch (e: Exception) {
             Result.failure(e)
@@ -172,7 +187,8 @@ class Family7CatalogRepository(appContext: Context) {
      * "meer"-link naast de kidsrij op de startpagina, dus een hernoeming of
      * verhuizing aan de kant van Family7 gaat vanzelf mee.
      */
-    suspend fun getKidsPrograms(): Result<List<ProgramItem>> = withContext(Dispatchers.IO) {
+    suspend fun getKidsPrograms(forceRefresh: Boolean = false): Result<List<ProgramItem>> = withContext(Dispatchers.IO) {
+        if (!forceRefresh) kidsCache.fresh()?.let { return@withContext Result.success(it) }
         try {
             val url = resolveKidsUrl()
                 ?: return@withContext Result.failure(
@@ -186,6 +202,7 @@ class Family7CatalogRepository(appContext: Context) {
             if (items.isEmpty()) {
                 Result.failure(Exception("Er zijn nu geen kinderprogramma's beschikbaar."))
             } else {
+                kidsCache.put(items)
                 Result.success(items)
             }
         } catch (e: UnauthorizedException) {
@@ -214,9 +231,12 @@ class Family7CatalogRepository(appContext: Context) {
 
     // ----------------------------------------------------------------- a-z
 
-    suspend fun getAllAZPrograms(): Result<List<ProgramItem>> = withContext(Dispatchers.IO) {
+    suspend fun getAllAZPrograms(forceRefresh: Boolean = false): Result<List<ProgramItem>> = withContext(Dispatchers.IO) {
+        if (!forceRefresh) azCache.fresh()?.let { return@withContext Result.success(it) }
         try {
-            Result.success(fetchAllPages(PLUS_AZ_URL))
+            val items = fetchAllPages(PLUS_AZ_URL)
+            if (items.isNotEmpty()) azCache.put(items)
+            Result.success(items)
         } catch (e: Exception) {
             Result.failure(e)
         }

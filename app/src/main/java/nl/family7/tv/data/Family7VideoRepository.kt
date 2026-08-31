@@ -12,6 +12,12 @@ class Family7VideoRepository(appContext: Context) {
 
     private val client = Family7Http.getClient(context)
 
+    // Programmapagina's per slug, zodat terugkeren naar een eerder geopend
+    // programma meteen de afleveringen toont in plaats van een laadscherm.
+    private val detailCache = HashMap<String, ProgramDetail>()
+
+    fun cachedDetail(slug: String): ProgramDetail? = synchronized(detailCache) { detailCache[slug] }
+
     companion object {
         private const val BASE_URL = "https://www.family7.nl"
     }
@@ -69,18 +75,18 @@ class Family7VideoRepository(appContext: Context) {
                 emptyList()
             }
 
-            Result.success(
-                ProgramDetail(
-                    slug = slug,
-                    title = title,
-                    posterUrl = posterUrl,
-                    description = description,
-                    category = category,
-                    seasons = seasons,
-                    nodeId = nodeId,
-                    isInMyList = isInMyList
-                )
+            val detail = ProgramDetail(
+                slug = slug,
+                title = title,
+                posterUrl = posterUrl,
+                description = description,
+                category = category,
+                seasons = seasons,
+                nodeId = nodeId,
+                isInMyList = isInMyList
             )
+            synchronized(detailCache) { detailCache[slug] = detail }
+            Result.success(detail)
         } catch (e: Exception) {
             Result.failure(e)
         }

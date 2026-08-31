@@ -1,6 +1,8 @@
 package nl.family7.tv.data
 
 import android.content.Context
+import okhttp3.Cache
+import java.io.File
 import android.content.SharedPreferences
 import okhttp3.Cookie
 import okhttp3.CookieJar
@@ -94,9 +96,26 @@ object Family7Http {
         val logging = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BASIC
         }
+        // Disk-cache van 20 MB, zodat een koude start en het verversen tegen
+        // procesdood kunnen en niet elke keer alles opnieuw over het netwerk halen.
+        val httpCache = Cache(File(context.applicationContext.cacheDir, "family7_http"), 20L * 1024 * 1024)
         return OkHttpClient.Builder()
+            .cache(httpCache)
             .cookieJar(getCookieJar(context))
             .addInterceptor(logging)
+            // Family7 stuurt op ingelogde pagina's "no-cache"; op dit ene apparaat
+            // is een korte bewaartijd prima en scheelt telkens opnieuw ophalen.
+            .addNetworkInterceptor { chain ->
+                val response = chain.proceed(chain.request())
+                if (chain.request().method == "GET") {
+                    response.newBuilder()
+                        .removeHeader("Pragma")
+                        .header("Cache-Control", "public, max-age=60, stale-while-revalidate=600")
+                        .build()
+                } else {
+                    response
+                }
+            }
             .addInterceptor { chain ->
                 val original = chain.request()
                 val builder = original.newBuilder().header("User-Agent", USER_AGENT)

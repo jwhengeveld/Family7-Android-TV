@@ -77,6 +77,16 @@ De app biedt volledige ondersteuning voor zowel **Live TV** (Family7 Plus livest
 - ⏳ **Laadschermen met plaatshouders**
   - Startscherm, programmapagina, zoeken, kids en mijn lijst tonen tijdens het
     laden de uiteindelijke indeling in plaats van een leeg vlak.
+- ⚡ **Slim cachen — geen laadscherm bij elke stap**
+  - De catalogus wordt in het geheugen bewaard, dus terugkeren naar een scherm
+    toont meteen de vorige inhoud in plaats van opnieuw een laadscherm.
+  - Stale-while-revalidate: bestaande inhoud direct tonen en stil op de
+    achtergrond verversen.
+  - Het startscherm ververst zichzelf elke 10 minuten zolang het zichtbaar is,
+    en meteen bij terugkeer op de voorgrond, zodat nieuwe programma's vanzelf
+    verschijnen zonder dat u iets merkt.
+  - Een OkHttp disk-cache maakt een koude start en het verversen sneller en
+    overleeft procesdood.
 - 🔐 **Veilige Authenticatie**
   - Drupal authenticatie met sessie- en cookiebeheer.
   - Inloggegevens worden nooit hardcoded opgeslagen; optionele veilige versleutelde lokale opslag via AndroidX Security EncryptedSharedPreferences.
