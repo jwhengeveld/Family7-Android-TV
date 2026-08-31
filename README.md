@@ -100,9 +100,27 @@ keyPassword=...
 ```
 
 Ontbreekt `keystore.properties`, dan bouwt `./gradlew assembleRelease` gewoon
-door, maar levert het een niet-ondertekende APK op. Bewaar een kopie van de
-keystore op een veilige plek: zonder die sleutel kan een update niet over een
-bestaande installatie heen.
+door, maar levert het een niet-ondertekende APK op.
+
+### Uitbrengen via GitHub
+
+De sleutel staat ook als repository secrets in GitHub
+(`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
+`ANDROID_KEY_PASSWORD`), zodat een release niet van een lokale keystore afhangt.
+Een tag uitbrengen is genoeg:
+
+```bash
+git tag v1.2.0 && git push origin v1.2.0
+```
+
+De workflow bouwt dan de ondertekende release, controleert de handtekening,
+faalt als de APK debuggable blijkt, en zet de APK bij de release. Pull requests
+van forks krijgen geen secrets en bouwen alleen debug.
+
+> **Bewaar de keystore zelf ergens buiten deze machine.** GitHub Actions secrets
+> zijn write-only: er kan mee gebouwd worden, maar de sleutel is er niet meer
+> uit te halen. Raakt de lokale keystore kwijt, dan kan geen enkele update meer
+> over een bestaande installatie heen.
 
 De release-build gebruikt R8 met resource shrinking (16,1 MB → 2,7 MB). De
 bewaarregels in `app/proguard-rules.pro` beschermen Jsoup, dat de HTML van
