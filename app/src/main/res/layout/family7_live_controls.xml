@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Bediening voor de live uitzending. Een live HLS-playlist heeft maar een
+  DVR-venster van enkele seconden, dus een tijdbalk met "duur" is misleidend:
+  in plaats daarvan staat hier een LIVE-indicator. Verder dezelfde officiele
+  exo_* id's, zodat PlayerControlView het gedrag afhandelt.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <View
+        android:id="@id/exo_controls_background"
+        android:layout_width="match_parent"
+        android:layout_height="340dp"
+        android:layout_gravity="top"
+        android:background="@drawable/scrim_top"/>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="240dp"
+        android:layout_gravity="bottom"
+        android:background="@drawable/scrim_bottom"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/tv_safe_margin_horizontal"
+        android:paddingEnd="@dimen/tv_safe_margin_horizontal"
+        android:paddingTop="@dimen/tv_safe_margin_vertical">
+
+        <!-- Terugknop met daaronder de programmagids -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <ImageButton
+                android:id="@+id/family7_back"
+                android:layout_width="@dimen/tv_back_button"
+                android:layout_height="@dimen/tv_back_button"
+                android:background="@drawable/bg_control_button"
+                android:src="@drawable/ic_back"
+                android:scaleType="centerInside"
+                android:padding="12dp"
+                android:focusable="true"
+                android:contentDescription="@string/player_back"/>
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_live_badge"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp"
+                    android:text="@string/live_tv"
+                    android:textColor="#FFFFFF"
+                    android:textSize="14sp"
+                    android:textStyle="bold"/>
+
+                <TextView
+                    android:id="@+id/family7_live_time"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="14dp"
+                    android:textColor="@color/family7_red_light"
+                    android:textSize="18sp"
+                    android:textStyle="bold"/>
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/family7_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:textColor="#FFFFFF"
+                android:textSize="34sp"
+                android:textStyle="bold"/>
+
+            <TextView
+                android:id="@+id/family7_subtitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginTop="8dp"
+                android:maxLines="3"
+                android:ellipsize="end"
+                android:lineSpacingExtra="4dp"
+                android:textColor="@color/text_secondary"
+                android:textSize="18sp"/>
+        </LinearLayout>
+
+        <ImageView
+            android:layout_width="60dp"
+            android:layout_height="60dp"
+            android:layout_marginStart="24dp"
+            android:src="@drawable/family7_mark"
+            android:contentDescription="@string/app_name"/>
+    </LinearLayout>
+
+    <!-- Voet: alleen afspelen/pauzeren plus een live-indicator -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="@dimen/tv_safe_margin_vertical">
+
+        <ImageButton
+            android:id="@id/exo_play_pause"
+            android:layout_width="@dimen/tv_control_button_large"
+            android:layout_height="@dimen/tv_control_button_large"
+            android:background="@drawable/bg_control_button"
+            android:padding="18dp"
+            android:scaleType="fitCenter"
+            android:focusable="true"
+            android:contentDescription="@string/exo_controls_play_description"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            android:text="@string/live_now"
+            android:textColor="@color/text_secondary"
+            android:textSize="18sp"/>
+    </LinearLayout>
+</FrameLayout>

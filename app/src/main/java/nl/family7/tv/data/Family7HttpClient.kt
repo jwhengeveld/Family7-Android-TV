@@ -74,38 +74,39 @@ class PersistentCookieJar(context: Context) : CookieJar {
 }
 
 object Family7Http {
-    private var clientInstance: OkHttpClient? = null
-    private var cookieJarInstance: PersistentCookieJar? = null
+    private const val USER_AGENT =
+        "Mozilla/5.0 (Linux; Android 10; Android TV) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-    fun getClient(context: Context): OkHttpClient {
-        if (clientInstance == null) {
-            val jar = getCookieJar(context)
-            val logging = HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BASIC
-            }
-            clientInstance = OkHttpClient.Builder()
-                .cookieJar(jar)
-                .addInterceptor(logging)
-                .addInterceptor { chain ->
-                    val original = chain.request()
-                    val reqBuilder = original.newBuilder()
-                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; Android TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                    if (original.header("Referer") == null) {
-                        reqBuilder.header("Referer", "https://www.family7.nl/")
-                    }
-                    chain.proceed(reqBuilder.build())
-                }
-                .connectTimeout(15, TimeUnit.SECONDS)
-                .readTimeout(20, TimeUnit.SECONDS)
-                .build()
-        }
-        return clientInstance!!
+    @Volatile private var clientInstance: OkHttpClient? = null
+    @Volatile private var cookieJarInstance: PersistentCookieJar? = null
+
+    fun getClient(context: Context): OkHttpClient = synchronized(this) {
+        clientInstance ?: buildClient(context).also { clientInstance = it }
     }
 
-    fun getCookieJar(context: Context): PersistentCookieJar {
-        if (cookieJarInstance == null) {
-            cookieJarInstance = PersistentCookieJar(context.applicationContext)
+    fun getCookieJar(context: Context): PersistentCookieJar = synchronized(this) {
+        cookieJarInstance
+            ?: PersistentCookieJar(context.applicationContext).also { cookieJarInstance = it }
+    }
+
+    private fun buildClient(context: Context): OkHttpClient {
+        val logging = HttpLoggingInterceptor().apply {
+            level = HttpLoggingInterceptor.Level.BASIC
         }
-        return cookieJarInstance!!
+        return OkHttpClient.Builder()
+            .cookieJar(getCookieJar(context))
+            .addInterceptor(logging)
+            .addInterceptor { chain ->
+                val original = chain.request()
+                val builder = original.newBuilder().header("User-Agent", USER_AGENT)
+                if (original.header("Referer") == null) {
+                    builder.header("Referer", "https://www.family7.nl/")
+                }
+                chain.proceed(builder.build())
+            }
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .build()
     }
 }

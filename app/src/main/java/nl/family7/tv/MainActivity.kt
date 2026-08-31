@@ -4,19 +4,34 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.unit.dp
 import nl.family7.tv.data.EpisodeItem
 import nl.family7.tv.data.Family7AuthRepository
 import nl.family7.tv.data.Family7CatalogRepository
 import nl.family7.tv.data.Family7LiveRepository
+import nl.family7.tv.data.Family7MyListRepository
 import nl.family7.tv.data.Family7VideoRepository
 import nl.family7.tv.data.ProgramDetail
 import nl.family7.tv.data.ProgramItem
@@ -26,7 +41,13 @@ import nl.family7.tv.ui.screens.LiveTVScreen
 import nl.family7.tv.ui.screens.LoginScreen
 import nl.family7.tv.ui.screens.PlayerScreen
 import nl.family7.tv.ui.screens.ProgramDetailScreen
+import nl.family7.tv.ui.screens.ProgramGridScreen
 import nl.family7.tv.ui.screens.SearchScreen
+import kotlinx.coroutines.launch
+import nl.family7.tv.ui.components.Family7Logo
+import nl.family7.tv.ui.theme.Family7Blue
+import nl.family7.tv.ui.theme.Family7BlueDark
+import nl.family7.tv.ui.theme.Family7Red
 import nl.family7.tv.ui.theme.Family7TVTheme
 
 sealed class ScreenState {
@@ -37,6 +58,8 @@ sealed class ScreenState {
     data class ProgramDetailView(val program: ProgramItem) : ScreenState()
     data class VideoPlayer(val episode: EpisodeItem, val program: ProgramDetail) : ScreenState()
     object Search : ScreenState()
+    object Kids : ScreenState()
+    object MyList : ScreenState()
 }
 
 class MainActivity : ComponentActivity() {
@@ -44,6 +67,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var liveRepo: Family7LiveRepository
     private lateinit var catalogRepo: Family7CatalogRepository
     private lateinit var videoRepo: Family7VideoRepository
+    private lateinit var myListRepo: Family7MyListRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,6 +76,7 @@ class MainActivity : ComponentActivity() {
         liveRepo = Family7LiveRepository(this)
         catalogRepo = Family7CatalogRepository(this)
         videoRepo = Family7VideoRepository(this)
+        myListRepo = Family7MyListRepository(this)
 
         setContent {
             Family7TVTheme {
@@ -60,7 +85,8 @@ class MainActivity : ComponentActivity() {
                         authRepo = authRepo,
                         liveRepo = liveRepo,
                         catalogRepo = catalogRepo,
-                        videoRepo = videoRepo
+                        videoRepo = videoRepo,
+                        myListRepo = myListRepo
                     )
                 }
             }
@@ -73,15 +99,19 @@ fun Family7TVApp(
     authRepo: Family7AuthRepository,
     liveRepo: Family7LiveRepository,
     catalogRepo: Family7CatalogRepository,
-    videoRepo: Family7VideoRepository
+    videoRepo: Family7VideoRepository,
+    myListRepo: Family7MyListRepository
 ) {
     var screenState by remember { mutableStateOf<ScreenState>(ScreenState.Splash) }
     var currentSession by remember { mutableStateOf<UserSession?>(null) }
+    val myList by myListRepo.items.collectAsState()
+    val scope = rememberCoroutineScope()
 
-    // Check existing session
+    // Bestaande sessie controleren en de lijst van dat account inladen
     LaunchedEffect(Unit) {
         val session = authRepo.checkSession()
         currentSession = session
+        myListRepo.load(session.uid)
         screenState = if (session.isLoggedIn) {
             ScreenState.Home
         } else {
@@ -89,15 +119,18 @@ fun Family7TVApp(
         }
     }
 
+    fun toggleMyList(item: ProgramItem) {
+        scope.launch { myListRepo.toggle(item) }
+    }
+
     when (val state = screenState) {
-        ScreenState.Splash -> {
-            // Loading splash
-        }
+        ScreenState.Splash -> SplashScreen()
         ScreenState.Login -> {
             LoginScreen(
                 authRepo = authRepo,
                 onLoginSuccess = { session ->
                     currentSession = session
+                    scope.launch { myListRepo.load(session.uid) }
                     screenState = ScreenState.Home
                 }
             )
@@ -105,14 +138,19 @@ fun Family7TVApp(
         ScreenState.Home -> {
             HomeScreen(
                 catalogRepo = catalogRepo,
+                myList = myList,
                 onNavigateToLive = { screenState = ScreenState.Live },
                 onSelectProgram = { program ->
                     screenState = ScreenState.ProgramDetailView(program)
                 },
                 onNavigateToSearch = { screenState = ScreenState.Search },
                 onNavigateToAZ = { screenState = ScreenState.Search },
+                onNavigateToKids = { screenState = ScreenState.Kids },
+                onNavigateToMyList = { screenState = ScreenState.MyList },
                 onLogout = {
                     authRepo.logout()
+                    currentSession = null
+                    scope.launch { myListRepo.load("") }
                     screenState = ScreenState.Login
                 }
             )
@@ -133,6 +171,8 @@ fun Family7TVApp(
             ProgramDetailScreen(
                 programItem = state.program,
                 videoRepo = videoRepo,
+                isInMyList = myList.any { it.slug == state.program.slug },
+                onToggleMyList = ::toggleMyList,
                 onPlayEpisode = { episode, detail ->
                     screenState = ScreenState.VideoPlayer(episode, detail)
                 },
@@ -176,6 +216,102 @@ fun Family7TVApp(
                     screenState = ScreenState.ProgramDetailView(program)
                 },
                 onBack = { screenState = ScreenState.Home }
+            )
+        }
+        ScreenState.Kids -> {
+            BackHandler {
+                screenState = ScreenState.Home
+            }
+            KidsScreen(
+                catalogRepo = catalogRepo,
+                onSelectProgram = { program ->
+                    screenState = ScreenState.ProgramDetailView(program)
+                },
+                onBack = { screenState = ScreenState.Home }
+            )
+        }
+        ScreenState.MyList -> {
+            BackHandler {
+                screenState = ScreenState.Home
+            }
+            ProgramGridScreen(
+                title = "Mijn lijst",
+                subtitle = "Uw opgeslagen programma's",
+                programs = myList,
+                isLoading = false,
+                errorMessage = null,
+                emptyMessage = "Uw lijst is nog leeg. Open een programma en kies \"Mijn lijst\" om het hier te bewaren.",
+                onSelectProgram = { program ->
+                    screenState = ScreenState.ProgramDetailView(program)
+                },
+                onBack = { screenState = ScreenState.Home }
+            )
+        }
+    }
+}
+
+@Composable
+private fun KidsScreen(
+    catalogRepo: Family7CatalogRepository,
+    onSelectProgram: (ProgramItem) -> Unit,
+    onBack: () -> Unit
+) {
+    var programs by remember { mutableStateOf<List<ProgramItem>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var reloadKey by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(reloadKey) {
+        isLoading = true
+        errorMessage = null
+        catalogRepo.getKidsPrograms()
+            .onSuccess {
+                programs = it
+                isLoading = false
+            }
+            .onFailure {
+                errorMessage = it.message ?: "Kon de kinderprogramma's niet laden."
+                isLoading = false
+            }
+    }
+
+    ProgramGridScreen(
+        title = "Kids",
+        subtitle = "Kinderprogramma's laden...",
+        programs = programs,
+        isLoading = isLoading,
+        errorMessage = errorMessage,
+        emptyMessage = "Er zijn op dit moment geen kinderprogramma's gevonden.",
+        onSelectProgram = onSelectProgram,
+        onRetry = { reloadKey++ },
+        onBack = onBack
+    )
+}
+
+@Composable
+private fun SplashScreen() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(Family7Blue, Family7BlueDark),
+                    radius = 1400f
+                )
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Family7Logo(height = 76.dp)
+            CircularProgressIndicator(
+                color = Family7Red,
+                modifier = Modifier
+                    .padding(top = 32.dp)
+                    .width(34.dp)
+                    .height(34.dp)
             )
         }
     }

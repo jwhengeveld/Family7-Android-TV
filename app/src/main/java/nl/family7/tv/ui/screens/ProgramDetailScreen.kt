@@ -17,7 +17,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -42,10 +44,12 @@ import nl.family7.tv.data.EpisodeItem
 import nl.family7.tv.data.Family7VideoRepository
 import nl.family7.tv.data.ProgramDetail
 import nl.family7.tv.data.ProgramItem
+import nl.family7.tv.ui.components.Family7Mark
+import nl.family7.tv.ui.components.SkeletonProgramDetail
 import nl.family7.tv.ui.components.TVButton
 import nl.family7.tv.ui.components.TVEpisodeCard
 import nl.family7.tv.ui.theme.Family7BlueDark
-import nl.family7.tv.ui.theme.Family7Orange
+import nl.family7.tv.ui.theme.Family7Red
 import nl.family7.tv.ui.theme.TextPrimary
 import nl.family7.tv.ui.theme.TextSecondary
 
@@ -53,6 +57,8 @@ import nl.family7.tv.ui.theme.TextSecondary
 fun ProgramDetailScreen(
     programItem: ProgramItem,
     videoRepo: Family7VideoRepository,
+    isInMyList: Boolean,
+    onToggleMyList: (ProgramItem) -> Unit,
     onPlayEpisode: (EpisodeItem, ProgramDetail) -> Unit,
     onBack: () -> Unit
 ) {
@@ -78,14 +84,16 @@ fun ProgramDetailScreen(
             .background(Family7BlueDark)
     ) {
         if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Family7Orange)
-            }
+            SkeletonProgramDetail()
         } else if (errorMessage != null) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Fout bij laden programma: $errorMessage", color = Color.White)
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Family7Mark(size = 64.dp)
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Text("Kon dit programma niet laden.", color = TextPrimary, fontSize = 18.sp)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(errorMessage!!, color = TextSecondary, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(20.dp))
                     TVButton(text = "TERUG", onClick = onBack)
                 }
             }
@@ -147,7 +155,7 @@ fun ProgramDetailScreen(
                                 onClick = onBack,
                                 isPrimary = false,
                                 leadingIcon = {
-                                    Icon(Icons.Default.ArrowBack, contentDescription = null, tint = Color.White)
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color.White)
                                 }
                             )
 
@@ -173,13 +181,35 @@ fun ProgramDetailScreen(
 
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            val firstEpisode = detail.seasons.firstOrNull()?.episodes?.firstOrNull()
-                            if (firstEpisode != null) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                val firstEpisode = detail.seasons.firstOrNull()?.episodes?.firstOrNull()
+                                if (firstEpisode != null) {
+                                    TVButton(
+                                        text = "AFSPELEN (Afl. ${firstEpisode.episodeNumber})",
+                                        onClick = { onPlayEpisode(firstEpisode, detail) },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
+                                        }
+                                    )
+                                }
+
                                 TVButton(
-                                    text = "AFSPELEN (Afl. ${firstEpisode.episodeNumber})",
-                                    onClick = { onPlayEpisode(firstEpisode, detail) },
+                                    text = if (isInMyList) "IN MIJN LIJST" else "MIJN LIJST",
+                                    onClick = {
+                                        onToggleMyList(
+                                            programItem.copy(
+                                                title = detail.title.ifEmpty { programItem.title },
+                                                thumbnailUrl = detail.posterUrl.ifEmpty { programItem.thumbnailUrl }
+                                            )
+                                        )
+                                    },
+                                    isPrimary = false,
                                     leadingIcon = {
-                                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
+                                        Icon(
+                                            imageVector = if (isInMyList) Icons.Default.Check else Icons.Default.Add,
+                                            contentDescription = null,
+                                            tint = Color.White
+                                        )
                                     }
                                 )
                             }

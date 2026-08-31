@@ -24,7 +24,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.ChildCare
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
@@ -37,6 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -55,25 +58,30 @@ import coil.compose.AsyncImage
 import nl.family7.tv.data.CategoryRow
 import nl.family7.tv.data.Family7CatalogRepository
 import nl.family7.tv.data.ProgramItem
+import nl.family7.tv.ui.components.Family7Mark
+import nl.family7.tv.ui.components.SkeletonHomeScreen
 import nl.family7.tv.ui.components.TVButton
 import nl.family7.tv.ui.components.TVProgramCard
 import nl.family7.tv.ui.theme.DarkSurface
 import nl.family7.tv.ui.theme.Family7BlueDark
-import nl.family7.tv.ui.theme.Family7Orange
+import nl.family7.tv.ui.theme.Family7Red
 import nl.family7.tv.ui.theme.TextPrimary
 import nl.family7.tv.ui.theme.TextSecondary
 
 enum class NavDestination {
-    ON_DEMAND, LIVE_TV, ORIGINALS, AZ, SEARCH, LOGOUT
+    ON_DEMAND, LIVE_TV, KIDS, MY_LIST, AZ, SEARCH, LOGOUT
 }
 
 @Composable
 fun HomeScreen(
     catalogRepo: Family7CatalogRepository,
+    myList: List<ProgramItem>,
     onNavigateToLive: () -> Unit,
     onSelectProgram: (ProgramItem) -> Unit,
     onNavigateToSearch: () -> Unit,
     onNavigateToAZ: () -> Unit,
+    onNavigateToKids: () -> Unit,
+    onNavigateToMyList: () -> Unit,
     onLogout: () -> Unit
 ) {
     var categoryRows by remember { mutableStateOf<List<CategoryRow>>(emptyList()) }
@@ -81,8 +89,9 @@ fun HomeScreen(
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var selectedNav by remember { mutableStateOf(NavDestination.ON_DEMAND) }
+    var reloadKey by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(reloadKey) {
         isLoading = true
         val res = catalogRepo.getOnDemandHome()
         res.onSuccess { rows ->
@@ -112,6 +121,8 @@ fun HomeScreen(
                     NavDestination.LIVE_TV -> onNavigateToLive()
                     NavDestination.SEARCH -> onNavigateToSearch()
                     NavDestination.AZ -> onNavigateToAZ()
+                    NavDestination.KIDS -> onNavigateToKids()
+                    NavDestination.MY_LIST -> onNavigateToMyList()
                     NavDestination.LOGOUT -> onLogout()
                     else -> {}
                 }
@@ -125,18 +136,17 @@ fun HomeScreen(
                 .fillMaxSize()
         ) {
             if (isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Family7Orange)
-                }
+                SkeletonHomeScreen()
             } else if (errorMessage != null) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Kon catalogus niet laden: $errorMessage", color = Color.White)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        TVButton(text = "OPNIEUW PROBEREN", onClick = {
-                            isLoading = true
-                            errorMessage = null
-                        })
+                        Family7Mark(size = 64.dp)
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Text("Kon de catalogus niet laden.", color = TextPrimary, fontSize = 18.sp)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(errorMessage!!, color = TextSecondary, fontSize = 14.sp)
+                        Spacer(modifier = Modifier.height(20.dp))
+                        TVButton(text = "OPNIEUW PROBEREN", onClick = { reloadKey++ })
                     }
                 }
             } else {
@@ -151,6 +161,20 @@ fun HomeScreen(
                                 program = featuredProgram!!,
                                 onWatchClick = { onSelectProgram(featuredProgram!!) },
                                 onLiveClick = onNavigateToLive
+                            )
+                        }
+                    }
+
+                    // Mijn lijst bovenaan, zodat opgeslagen programma's direct in beeld staan
+                    if (myList.isNotEmpty()) {
+                        item {
+                            CategorySwimlane(
+                                row = CategoryRow(
+                                    id = "mijn_lijst",
+                                    title = "Mijn lijst",
+                                    items = myList
+                                ),
+                                onProgramClick = onSelectProgram
                             )
                         }
                     }
@@ -182,16 +206,8 @@ fun TVSideNav(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // Logo / Emblem Top
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(Family7Orange),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("7", color = Color.White, fontWeight = FontWeight.Black, fontSize = 22.sp)
-        }
+        // Beeldmerk bovenaan
+        Family7Mark(size = 44.dp)
 
         // Navigation Items
         Column(
@@ -211,6 +227,18 @@ fun TVSideNav(
                 onClick = { onSelect(NavDestination.LIVE_TV) }
             )
             TVSideNavItem(
+                icon = Icons.Default.ChildCare,
+                label = "Kids",
+                isSelected = selected == NavDestination.KIDS,
+                onClick = { onSelect(NavDestination.KIDS) }
+            )
+            TVSideNavItem(
+                icon = Icons.Default.BookmarkBorder,
+                label = "Mijn lijst",
+                isSelected = selected == NavDestination.MY_LIST,
+                onClick = { onSelect(NavDestination.MY_LIST) }
+            )
+            TVSideNavItem(
                 icon = Icons.Default.SortByAlpha,
                 label = "A-Z",
                 isSelected = selected == NavDestination.AZ,
@@ -226,7 +254,7 @@ fun TVSideNav(
 
         // Logout Bottom
         TVSideNavItem(
-            icon = Icons.Default.ExitToApp,
+            icon = Icons.AutoMirrored.Filled.ExitToApp,
             label = "Uitloggen",
             isSelected = selected == NavDestination.LOGOUT,
             onClick = { onSelect(NavDestination.LOGOUT) }
@@ -251,7 +279,7 @@ fun TVSideNavItem(
             .clip(RoundedCornerShape(10.dp))
             .background(
                 when {
-                    isFocused -> Family7Orange
+                    isFocused -> Family7Red
                     isSelected -> Color(0xFF03326C)
                     else -> Color.Transparent
                 }
@@ -330,7 +358,7 @@ fun HeroBanner(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(4.dp))
-                        .background(Family7Orange)
+                        .background(Family7Red)
                         .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
                     Text(

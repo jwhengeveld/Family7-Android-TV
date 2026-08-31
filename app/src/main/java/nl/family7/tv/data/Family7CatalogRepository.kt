@@ -8,14 +8,118 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
-class Family7CatalogRepository(private val context: Context) {
+class Family7CatalogRepository(appContext: Context) {
+    private val context: Context = appContext.applicationContext
+
     private val client = Family7Http.getClient(context)
+
+    /** Onthoudt de gevonden specialpagina's, zodat ze niet elke keer opnieuw gezocht hoeven te worden. */
+    private val cache = context.getSharedPreferences("family7_catalog_cache", Context.MODE_PRIVATE)
 
     companion object {
         private const val BASE_URL = "https://www.family7.nl"
         private const val PLUS_HOME_URL = "$BASE_URL/plus"
         private const val PLUS_NIEUW_URL = "$BASE_URL/plus/nieuw"
         private const val PLUS_AZ_URL = "$BASE_URL/plus/a-z?title=All"
+
+        /**
+         * Laatste terugval voor de kidssectie. De app zoekt de specialpagina eerst
+         * op in het menu van Family7+, zodat een naams- of adreswijziging vanzelf
+         * meegaat; deze waarde wordt alleen gebruikt als er niets gevonden wordt.
+         */
+        private const val KIDS_FALLBACK_URL = "$BASE_URL/plus/special/Kinderprogramma%27s"
+
+        private const val KEY_KIDS_URL = "kids_url"
+
+        /** Rijen die de app zelf al bovenaan toont, om dubbelingen te voorkomen. */
+        private val SUPPRESSED_ROW_IDS = setOf("mijn_lijst", "mijn_lijstje")
+
+        /** Veiligheidsgrens bij het doorbladeren van gepagineerde overzichten. */
+        private const val MAX_PAGES = 20
+    }
+
+    /**
+     * Alle specialpagina's die Family7+ op dit moment aanbiedt, rechtstreeks uit
+     * het menu gelezen. Nieuwe specials verschijnen zo vanzelf.
+     */
+    suspend fun getSpecials(): Result<List<CategoryRow>> = withContext(Dispatchers.IO) {
+        try {
+            val doc = fetchDocument(PLUS_HOME_URL)
+            val specials = doc.select("a[href*='/plus/special/']")
+                .mapNotNull { a ->
+                    val href = a.attr("href").trim()
+                    if (href.isEmpty()) return@mapNotNull null
+                    val url = if (href.startsWith("http")) href else "$BASE_URL$href"
+                    val label = a.text().trim().ifEmpty {
+                        java.net.URLDecoder.decode(href.substringAfterLast('/'), "UTF-8")
+                    }
+                    CategoryRow(id = url.substringAfterLast('/'), title = label, moreUrl = url)
+                }
+                .distinctBy { it.moreUrl }
+
+            Result.success(specials)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /** Haalt alle programma's van een willekeurige overzichtspagina, inclusief vervolgpagina's. */
+    suspend fun getProgramsFrom(url: String): Result<List<ProgramItem>> = withContext(Dispatchers.IO) {
+        try {
+            Result.success(fetchAllPages(url))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * De kinderprogramma's van Family7+. Het adres van de specialpagina wordt in
+     * het menu opgezocht (op naam), zodat de sectie blijft werken als Family7 de
+     * pagina hernoemt of verplaatst. De pagina zit achter de login.
+     */
+    suspend fun getKidsPrograms(): Result<List<ProgramItem>> = withContext(Dispatchers.IO) {
+        try {
+            val kidsUrl = resolveKidsUrl()
+            val items = fetchAllPages(kidsUrl)
+
+            if (items.isEmpty()) {
+                return@withContext Result.failure(
+                    Exception(
+                        "Geen kinderprogramma's gevonden. Controleer of u bent ingelogd " +
+                            "met een Family7 Plus account."
+                    )
+                )
+            }
+            Result.success(items)
+        } catch (e: UnauthorizedException) {
+            Result.failure(
+                Exception("De kinderprogramma's zijn alleen zichtbaar als u bent ingelogd.")
+            )
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /** Zoekt de kids-specialpagina op in het menu; onthoudt wat er gevonden is. */
+    private fun resolveKidsUrl(): String {
+        val remembered = cache.getString(KEY_KIDS_URL, null)
+        val discovered = runCatching {
+            fetchDocument(PLUS_HOME_URL)
+                .select("a[href*='/plus/special/']")
+                .map { it.attr("href") to it.text() }
+                .firstOrNull { (href, text) ->
+                    val haystack = (java.net.URLDecoder.decode(href, "UTF-8") + " " + text).lowercase()
+                    haystack.contains("kinder") || haystack.contains("kids") || haystack.contains("jeugd")
+                }
+                ?.first
+                ?.let { if (it.startsWith("http")) it else "$BASE_URL$it" }
+        }.getOrNull()
+
+        if (discovered != null) {
+            cache.edit().putString(KEY_KIDS_URL, discovered).apply()
+            return discovered
+        }
+        return remembered ?: KIDS_FALLBACK_URL
     }
 
     /**
@@ -84,7 +188,7 @@ class Family7CatalogRepository(private val context: Context) {
                 if (items.isNotEmpty()) {
                     val rowId = rowTitle.lowercase().replace(" ", "_").replace("'", "")
                     // Avoid duplicate rows
-                    if (rows.none { it.id == rowId }) {
+                    if (rows.none { it.id == rowId } && rowId !in SUPPRESSED_ROW_IDS) {
                         rows.add(
                             CategoryRow(
                                 id = rowId,
@@ -115,20 +219,47 @@ class Family7CatalogRepository(private val context: Context) {
      */
     suspend fun getAllAZPrograms(): Result<List<ProgramItem>> = withContext(Dispatchers.IO) {
         try {
-            val req = Request.Builder()
-                .url(PLUS_AZ_URL)
-                .build()
-
-            val resp = client.newCall(req).execute()
-            val html = resp.body?.string() ?: ""
-            resp.close()
-
-            val doc = Jsoup.parse(html)
-            val items = parseCardsFromDoc(doc)
-
-            Result.success(items.distinctBy { it.slug })
+            Result.success(fetchAllPages(PLUS_AZ_URL))
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    /**
+     * Leest een overzichtspagina en volgt de pagineringslinks, zodat ook
+     * programma's op vervolgpagina's meekomen. Stopt zodra een pagina niets
+     * nieuws meer oplevert.
+     */
+    private fun fetchAllPages(startUrl: String): List<ProgramItem> {
+        val collected = LinkedHashMap<String, ProgramItem>()
+        var page = 0
+
+        while (page < MAX_PAGES) {
+            val url = if (page == 0) startUrl else appendPageParam(startUrl, page)
+            val doc = runCatching { fetchDocument(url) }.getOrNull() ?: break
+
+            val items = parseCardsFromDoc(doc)
+            val before = collected.size
+            items.forEach { collected.putIfAbsent(it.slug, it) }
+
+            val hasMore = doc.select(".pager__item--next a, li.pager-next a, a[rel=next]").isNotEmpty()
+            if (collected.size == before || !hasMore) break
+            page++
+        }
+        return collected.values.toList()
+    }
+
+    private fun appendPageParam(url: String, page: Int): String =
+        if (url.contains("?")) "$url&page=$page" else "$url?page=$page"
+
+    private fun fetchDocument(url: String): Document {
+        val req = Request.Builder()
+            .url(url)
+            .header("Referer", PLUS_HOME_URL)
+            .build()
+        client.newCall(req).execute().use { resp ->
+            if (resp.code == 401 || resp.code == 403) throw UnauthorizedException()
+            return Jsoup.parse(resp.body?.string() ?: "")
         }
     }
 
@@ -202,4 +333,6 @@ class Family7CatalogRepository(private val context: Context) {
     private fun extractSlug(url: String): String {
         return url.substringBefore("?").trimEnd('/').substringAfterLast('/')
     }
+
+    private class UnauthorizedException : Exception("Niet ingelogd")
 }

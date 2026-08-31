@@ -42,7 +42,7 @@ import coil.compose.AsyncImage
 import nl.family7.tv.data.EpisodeItem
 import nl.family7.tv.data.ProgramItem
 import nl.family7.tv.ui.theme.DarkSurfaceVariant
-import nl.family7.tv.ui.theme.Family7Orange
+import nl.family7.tv.ui.theme.Family7Red
 import nl.family7.tv.ui.theme.TextPrimary
 import nl.family7.tv.ui.theme.TextSecondary
 
@@ -69,12 +69,12 @@ fun TVProgramCard(
     ) {
         Card(
             shape = RoundedCornerShape(10.dp),
-            border = if (isFocused) BorderStroke(3.dp, Family7Orange) else BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
+            border = if (isFocused) BorderStroke(3.dp, Family7Red) else BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
             colors = CardDefaults.cardColors(containerColor = DarkSurfaceVariant),
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
-                .shadow(if (isFocused) 16.dp else 2.dp, shape = RoundedCornerShape(10.dp), ambientColor = Family7Orange)
+                .shadow(if (isFocused) 16.dp else 2.dp, shape = RoundedCornerShape(10.dp), ambientColor = Family7Red)
                 .clickable(interactionSource = interactionSource, indication = null) { onClick() }
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
@@ -103,7 +103,7 @@ fun TVProgramCard(
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .padding(6.dp)
-                            .background(Family7Orange, RoundedCornerShape(4.dp))
+                            .background(Family7Red, RoundedCornerShape(4.dp))
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
@@ -121,7 +121,7 @@ fun TVProgramCard(
 
         Text(
             text = item.title,
-            color = if (isFocused) Family7Orange else TextPrimary,
+            color = if (isFocused) Family7Red else TextPrimary,
             fontSize = 13.sp,
             fontWeight = if (isFocused) FontWeight.Bold else FontWeight.Medium,
             maxLines = 1,
@@ -146,7 +146,7 @@ fun TVEpisodeCard(
 
     Card(
         shape = RoundedCornerShape(10.dp),
-        border = if (isFocused) BorderStroke(3.dp, Family7Orange) else BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
+        border = if (isFocused) BorderStroke(3.dp, Family7Red) else BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
         colors = CardDefaults.cardColors(containerColor = if (isFocused) DarkSurfaceVariant else Color(0xFF041935)),
         modifier = modifier
             .width(280.dp)
@@ -187,7 +187,7 @@ fun TVEpisodeCard(
             Column(modifier = Modifier.padding(10.dp)) {
                 Text(
                     text = "Afl. ${episode.episodeNumber}: ${episode.title}",
-                    color = if (isFocused) Family7Orange else TextPrimary,
+                    color = if (isFocused) Family7Red else TextPrimary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
@@ -225,7 +225,7 @@ fun TVButton(
     )
 
     val bgColor = when {
-        isFocused -> Family7Orange
+        isFocused -> Family7Red
         isPrimary -> Color(0xFF03326C)
         else -> Color.White.copy(alpha = 0.12f)
     }

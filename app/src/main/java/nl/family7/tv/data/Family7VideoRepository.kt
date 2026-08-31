@@ -7,7 +7,9 @@ import okhttp3.Request
 import org.jsoup.Jsoup
 import java.util.regex.Pattern
 
-class Family7VideoRepository(private val context: Context) {
+class Family7VideoRepository(appContext: Context) {
+    private val context: Context = appContext.applicationContext
+
     private val client = Family7Http.getClient(context)
 
     companion object {

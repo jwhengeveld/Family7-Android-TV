@@ -38,15 +38,49 @@ De app biedt volledige ondersteuning voor zowel **Live TV** (Family7 Plus livest
   - Featured Hero Banner met uitgelichte programma's.
   - Dynamische rijen ("Aanbevolen", "Mijn lijst", "Originals", "Documentaires", "Bijbelstudie", etc.).
   - Programmadetailpagina's met synopsis, seizoenen, afleveringsoverzichten en speelduur.
+- 🧒 **Kids-sectie**
+  - Eigen ingang naar de Family7+ specialpagina met kinderprogramma's.
+  - Het adres van die pagina wordt in het menu van Family7+ opgezocht, dus een
+    hernoeming of verhuizing aan de kant van Family7 gaat vanzelf mee.
+- 🔖 **Mijn lijst**
+  - Programma's bewaren vanaf de programmapagina, per ingelogd account.
+  - Verschijnt als eerste rij op het startscherm en als eigen overzicht in de zijbalk.
 - 🔍 **A-Z Catalogus & Zoeken**
-  - Snel alfabetisch filteren op alle 194+ beschikbare programma's.
+  - Snel alfabetisch filteren op alle beschikbare programma's, inclusief
+    vervolgpagina's, zodat nieuwe titels er automatisch bij komen.
   - Real-time zoekfunctie op titel en thema.
+- 📡 **Volledig dynamisch, niets vastgezet in de code**
+  - Rijen, programma's, afleveringen en specials komen rechtstreeks van
+    family7.nl; er staat geen catalogus in de app.
+  - De live speler-URL wordt van de livepagina zelf gelezen. De laatst werkende
+    speler- en stream-URL worden onthouden als noodgreep, in plaats van een
+    vaste URL die veroudert zodra Streampartner van host wisselt.
 - 🎮 **Geoptimaliseerd voor TV Afstandsbediening (D-Pad)**
-  - Vloeiende focus-indicatoren met schaalvergroting (1.06x) en Family7-oranje accenten.
+  - Vloeiende focus-indicatoren met schaalvergroting (1.06x) en Family7-rode accenten uit het logo.
   - Leanback launcher compatibel voor Android TV, Google TV, en smart home portals (zoals Meta Portal Go).
+- ▶️ **Standaard Android TV mediabediening**
+  - De officiele Media3 `PlayerView`-bediening: een druk op OK of een tik brengt de
+    bediening in beeld, OK speelt/pauzeert, links/rechts spoelt 10 s terug / 30 s vooruit,
+    en na 5 seconden verdwijnt de bediening weer.
+  - Een `MediaSession` registreert de weergave bij het systeem, zodat "Now playing",
+    de mediabalk en de mediatoetsen van de afstandsbediening de app aansturen, met de
+    juiste titel, programmanaam en omslagafbeelding.
+  - Het scherm blijft aan tijdens het afspelen en de weergave pauzeert bij het
+    verlaten van de voorgrond.
+- 🎨 **Merkidentiteit**
+  - Het Family7 logo is als schaalbare vector opgenomen (`art/family7_logo.svg` en
+    `art/family7_mark.svg`, plus de VectorDrawables in `res/drawable/`) en wordt gebruikt
+    voor het startscherm, het inlogscherm, de zijbalk, de speler, het app-icoon
+    (adaptief, inclusief monochrome variant) en de Android TV banner.
+- ⏳ **Laadschermen met plaatshouders**
+  - Startscherm, programmapagina, zoeken, kids en mijn lijst tonen tijdens het
+    laden de uiteindelijke indeling in plaats van een leeg vlak.
 - 🔐 **Veilige Authenticatie**
   - Drupal authenticatie met sessie- en cookiebeheer.
   - Inloggegevens worden nooit hardcoded opgeslagen; optionele veilige versleutelde lokale opslag via AndroidX Security EncryptedSharedPreferences.
+  - Nog geen account? Het inlogscherm toont een QR-code naar het inschrijfformulier
+    van Family7 Plus (€ 3 per maand, eerste 10 dagen gratis) - handiger dan een
+    webadres overtypen met de afstandsbediening.
 
 ---
 

@@ -6,4 +6,7 @@
     <string name="nav_my_list">Mijn Lijst</string>
     <string name="nav_search">Zoeken</string>
     <string name="nav_settings">Instellingen</string>
+    <string name="player_back">Terug</string>
+    <string name="live_tv">LIVE TV</string>
+    <string name="live_now">Je kijkt live</string>
 </resources>

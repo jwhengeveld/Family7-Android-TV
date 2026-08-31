@@ -7,12 +7,22 @@ import okhttp3.Request
 import org.jsoup.Jsoup
 import java.util.regex.Pattern
 
-class Family7LiveRepository(private val context: Context) {
+class Family7LiveRepository(appContext: Context) {
+    private val context: Context = appContext.applicationContext
+
     private val client = Family7Http.getClient(context)
+
+    /**
+     * Onthoudt de laatst werkende speler- en stream-URL. Streampartner wisselt
+     * regelmatig van host, dus een vaste URL in de code veroudert; een geleerde
+     * waarde uit een eerdere sessie is een betere noodgreep.
+     */
+    private val cache = context.getSharedPreferences("family7_live_cache", Context.MODE_PRIVATE)
 
     companion object {
         private const val LIVE_PAGE_URL = "https://www.family7.nl/plus/live"
-        private const val DEFAULT_STREAM_URL = "https://highvolume155.streampartner.nl/family7_teracue/smil:livestream.smil/playlist.m3u8"
+        private const val KEY_LAST_PLAYER_URL = "last_player_url"
+        private const val KEY_LAST_STREAM_URL = "last_stream_url"
     }
 
     suspend fun getLiveInfo(): Result<LiveStreamInfo> = withContext(Dispatchers.IO) {
@@ -39,17 +49,20 @@ class Family7LiveRepository(private val context: Context) {
                 imageUrl = "https://www.family7.nl$imageUrl"
             }
 
-            // Extract player loader url (streampartner url)
-            var playerUrl = doc.select(".video-player--loader, .video-player--frame").attr("data-src").ifEmpty {
-                "https://ssl.streampartner.nl/player.php?url=oegitpnreinkp5oilnxg"
-            }
-            if (playerUrl.startsWith("/")) {
-                playerUrl = "https://www.family7.nl$playerUrl"
+            // De speler-URL wordt van de pagina zelf gehaald, zodat een wijziging
+            // bij Family7 of Streampartner meteen wordt overgenomen.
+            val playerUrl = discoverPlayerUrl(doc, html)
+            if (playerUrl.isNotEmpty()) {
+                cache.edit().putString(KEY_LAST_PLAYER_URL, playerUrl).apply()
             }
 
-            // Fetch Streampartner player page and decode live tokenized HLS stream
-            val streamUrl = resolveLiveStreamUrl(playerUrl).ifEmpty {
-                DEFAULT_STREAM_URL
+            val streamUrl = resolveLiveStreamUrl(playerUrl)
+                .ifEmpty { resolveLiveStreamUrl(cache.getString(KEY_LAST_PLAYER_URL, "").orEmpty()) }
+                .ifEmpty { firstM3u8(html) }
+                .ifEmpty { cache.getString(KEY_LAST_STREAM_URL, "").orEmpty() }
+
+            if (streamUrl.isNotEmpty()) {
+                cache.edit().putString(KEY_LAST_STREAM_URL, streamUrl).apply()
             }
 
             Result.success(
@@ -67,7 +80,36 @@ class Family7LiveRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Zoekt de speler-URL op de livepagina. Probeert achtereenvolgens de bekende
+     * Drupal-containers, elke iframe, en als laatste elke Streampartner-verwijzing
+     * in de ruwe HTML, zodat een gewijzigde opmaak niet meteen alles breekt.
+     */
+    private fun discoverPlayerUrl(doc: org.jsoup.nodes.Document, html: String): String {
+        val candidates = buildList {
+            add(doc.select(".video-player--loader, .video-player--frame").attr("data-src"))
+            add(doc.select("[data-src*='player']").attr("data-src"))
+            add(doc.select("iframe[src*='player']").attr("src"))
+            add(doc.select("iframe[src*='streampartner']").attr("src"))
+            add(doc.select("iframe[src]").attr("src"))
+            val raw = Pattern.compile("https?://[^\\s\"'<>]*streampartner\\.nl/[^\\s\"'<>]+")
+                .matcher(html)
+            if (raw.find()) add(raw.group(0) ?: "")
+        }
+
+        return candidates
+            .firstOrNull { it.isNotBlank() }
+            ?.let { if (it.startsWith("/")) "https://www.family7.nl$it" else it }
+            .orEmpty()
+    }
+
+    private fun firstM3u8(html: String): String {
+        val m = Pattern.compile("https?://[^\\s\"'<>]+\\.m3u8[^\\s\"'<>]*").matcher(html)
+        return if (m.find()) m.group(0) ?: "" else ""
+    }
+
     private fun resolveLiveStreamUrl(playerUrl: String): String {
+        if (playerUrl.isBlank()) return ""
         return try {
             val playerReq = Request.Builder()
                 .url(playerUrl)

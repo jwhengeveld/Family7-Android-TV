@@ -8,7 +8,9 @@ import okhttp3.FormBody
 import okhttp3.Request
 import org.jsoup.Jsoup
 
-class Family7AuthRepository(private val context: Context) {
+class Family7AuthRepository(appContext: Context) {
+    private val context: Context = appContext.applicationContext
+
     private val client = Family7Http.getClient(context)
     private val cookieJar = Family7Http.getCookieJar(context)
     private val authPrefs: SharedPreferences = context.getSharedPreferences("family7_auth_prefs", Context.MODE_PRIVATE)

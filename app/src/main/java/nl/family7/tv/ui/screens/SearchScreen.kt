@@ -18,7 +18,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -37,10 +37,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import nl.family7.tv.data.Family7CatalogRepository
 import nl.family7.tv.data.ProgramItem
+import nl.family7.tv.ui.components.Family7Mark
+import nl.family7.tv.ui.components.SkeletonGrid
 import nl.family7.tv.ui.components.TVButton
 import nl.family7.tv.ui.components.TVProgramCard
 import nl.family7.tv.ui.theme.Family7BlueDark
-import nl.family7.tv.ui.theme.Family7Orange
+import nl.family7.tv.ui.theme.Family7Red
 import nl.family7.tv.ui.theme.TextPrimary
 import nl.family7.tv.ui.theme.TextSecondary
 
@@ -65,9 +67,11 @@ fun SearchScreen(
     LaunchedEffect(Unit) {
         isLoading = true
         val res = catalogRepo.getAllAZPrograms()
-        res.onSuccess {
-            allPrograms = it
-            displayedResults = it
+        res.onSuccess { programs ->
+            // Het A-Z overzicht kan hetzelfde programma meermaals bevatten.
+            val unique = programs.distinctBy { it.slug }
+            allPrograms = unique
+            displayedResults = unique
             isLoading = false
         }.onFailure {
             isLoading = false
@@ -119,7 +123,7 @@ fun SearchScreen(
                 onClick = onBack,
                 isPrimary = false,
                 leadingIcon = {
-                    Icon(Icons.Default.ArrowBack, contentDescription = null, tint = Color.White)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color.White)
                 }
             )
 
@@ -133,7 +137,7 @@ fun SearchScreen(
                 },
                 placeholder = "Zoek op titel, thema of trefwoord...",
                 leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = null, tint = Family7Orange)
+                    Icon(Icons.Default.Search, contentDescription = null, tint = Family7Red)
                 },
                 onImeAction = { applyFilter(selectedFilter, searchQuery) }
             )
@@ -176,7 +180,7 @@ fun SearchScreen(
             if (searchQuery.isNotEmpty()) {
                 Text(
                     text = "Zoekresultaten voor \"$searchQuery\"",
-                    color = Family7Orange,
+                    color = Family7Red,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -187,16 +191,22 @@ fun SearchScreen(
 
         // Results Grid
         if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Family7Orange)
-            }
+            SkeletonGrid(rows = 3, columns = 4)
         } else if (displayedResults.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    text = "Geen programma's gevonden voor \"$searchQuery\".",
-                    color = TextSecondary,
-                    fontSize = 16.sp
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Family7Mark(size = 56.dp)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = if (searchQuery.isBlank()) {
+                            "Geen programma's gevonden."
+                        } else {
+                            "Geen programma's gevonden voor \"$searchQuery\"."
+                        },
+                        color = TextSecondary,
+                        fontSize = 16.sp
+                    )
+                }
             }
         } else {
             LazyVerticalGrid(
@@ -206,7 +216,7 @@ fun SearchScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(displayedResults, key = { it.slug }) { item ->
+                items(displayedResults) { item ->
                     TVProgramCard(
                         item = item,
                         onClick = { onSelectProgram(item) },
