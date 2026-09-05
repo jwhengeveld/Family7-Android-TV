@@ -167,10 +167,10 @@ class Family7VideoRepository(appContext: Context) {
                 }
             }
 
-            // Fallback: search for direct m3u8 in page
-            val directMatch = Pattern.compile("https?://[^\\s\"'<>]+\\.m3u8[^\\s\"'<>]*").matcher(html)
-            if (directMatch.find()) {
-                return@withContext Result.success(directMatch.group(0) ?: "")
+            // Terugval: het adres staat soms gewoon op de pagina zelf.
+            val direct = StreampartnerPlayer.firstM3u8(html)
+            if (direct.isNotEmpty()) {
+                return@withContext Result.success(direct)
             }
 
             Result.failure(Exception("Kon geen afspeelbare videobron vinden voor deze aflevering."))
@@ -179,22 +179,26 @@ class Family7VideoRepository(appContext: Context) {
         }
     }
 
+    /**
+     * Het stream-adres uit de spelerpagina.
+     *
+     * Eerst het adres dat er letterlijk in staat, en anders dezelfde uitpakker
+     * die de live-stream gebruikt: Streampartner zet de on-demand speler soms
+     * ook ingepakt op de pagina, en dan hoort de aflevering het gewoon te doen
+     * in plaats van met "geen videobron" te stoppen.
+     */
     private fun extractStreamFromPlayerHtml(html: String): String {
-        // Pattern 1: src: "https://highvolume08.streampartner.nl/..."
-        val p1 = Pattern.compile("src:\\s*[\"'](https?://[^\"']+\\.m3u8[^\"']*)[\"']")
-        val m1 = p1.matcher(html)
-        if (m1.find()) return m1.group(1) ?: ""
+        // De speler zet het adres bij voorkeur in "src:".
+        val labelled = Pattern.compile("src:\\s*[\"'](https?://[^\"']+\\.m3u8[^\"']*)[\"']")
+            .matcher(html)
+        if (labelled.find()) return labelled.group(1).orEmpty()
 
-        // Pattern 2: Any m3u8 URL in the page
-        val p2 = Pattern.compile("https?://[^\\s\"'<>]+\\.m3u8[^\\s\"'<>]*")
-        val m2 = p2.matcher(html)
-        if (m2.find()) return m2.group(0) ?: ""
+        StreampartnerPlayer.firstM3u8(html).takeIf { it.isNotEmpty() }?.let { return it }
 
-        // Pattern 3: mp4 direct URL
-        val p3 = Pattern.compile("https?://[^\\s\"'<>]+\\.mp4[^\\s\"'<>]*")
-        val m3 = p3.matcher(html)
-        if (m3.find()) return m3.group(0) ?: ""
+        StreampartnerPlayer.decodeStreamUrls(html).firstOrNull()?.let { return it }
 
-        return ""
+        // Losse mp4-bestanden komen voor bij oudere afleveringen.
+        val mp4 = Pattern.compile("https?://[^\\s\"'<>]+\\.mp4[^\\s\"'<>]*").matcher(html)
+        return if (mp4.find()) mp4.group(0).orEmpty() else ""
     }
 }

@@ -89,7 +89,10 @@ De app biedt volledige ondersteuning voor zowel **Live TV** (Family7 Plus livest
     overleeft procesdood.
 - 🔐 **Veilige Authenticatie**
   - Drupal authenticatie met sessie- en cookiebeheer.
-  - Inloggegevens worden nooit hardcoded opgeslagen; optionele veilige versleutelde lokale opslag via AndroidX Security EncryptedSharedPreferences.
+  - Het wachtwoord wordt nergens bewaard. De aanmeldsessie (de cookie van
+    family7.nl) gaat versleuteld met AES-256-GCM naar schijf, met een sleutel
+    uit de AndroidKeyStore die het toestel niet verlaat, en blijft buiten
+    back-ups en toestelmigratie.
   - Nog geen account? Het inlogscherm toont een QR-code naar het inschrijfformulier
     van Family7 Plus (€ 3 per maand, eerste 10 dagen gratis) - handiger dan een
     webadres overtypen met de afstandsbediening.
@@ -146,8 +149,9 @@ family7.nl leest.
 | **Networking & HTTP** | OkHttp 4.12.0 met persistente CookieJar |
 | **HTML / Scraping** | Jsoup 1.18.3 & Streampartner Recursive Unpacker |
 | **Afbeeldingen** | Coil 2.7.0 (Compose AsyncImage met disk caching) |
-| **Beveiliging** | AndroidX Security Crypto (EncryptedSharedPreferences) |
+| **Beveiliging** | AES-256-GCM met een sleutel uit de AndroidKeyStore; cookies volgens domein, pad en secure-vlag |
 | **Minimaal Android OS** | Android 7.0 (API Level 24+) / TV Android 10+ |
+| **Tests** | JUnit 4 op de uitpakker, de cookieregels en de cache |
 
 ---
 
@@ -179,10 +183,35 @@ cd Family7-Android-TV
 
 # De APK is te vinden in:
 # app/build/outputs/apk/debug/app-debug.apk
+
+# Draai de tests
+./gradlew testDebugUnitTest
+
+# Een bundel voor de winkel (in plaats van een APK)
+./gradlew bundleRelease
+# app/build/outputs/bundle/release/app-release.aab
 ```
+
+> Op macOS wordt de build-map omgeleid naar `~/.builds/Family7AndroidTV`,
+> omdat externe exFAT-schijven de tussenbestanden van Gradle beschadigen.
+> Zoek de APK en de bundel daar als het project op zo'n schijf staat.
 
 ---
 
-## 📄 Licentie
+## 📄 Status, merk en licentie
 
-Dit project is ontwikkeld voor openbaar gebruik en compatibel met Family7 Plus abonnementen. Alle programmacontent en handelsmerken zijn eigendom van [Family7](https://www.family7.nl/).
+Dit is een **onafhankelijk gemaakte app, geen officiële uitgave van Family7**.
+De naam Family7, het logo en alle programma's zijn eigendom van
+[Family7](https://www.family7.nl/); ze worden hier gebruikt om de eigen dienst
+van Family7 op de televisie te ontsluiten, niet om er iets eigens mee te
+suggereren. De app toont uitsluitend content waar de ingelogde gebruiker via
+zijn eigen Family7-account al recht op heeft.
+
+De app staat daarom niet in de Play Store: publiceren daar vraagt om
+toestemming van Family7 voor het gebruik van naam en logo. Zie
+[docs/VOORLEGGING-FAMILY7.md](docs/VOORLEGGING-FAMILY7.md) voor de stand van
+zaken en wat er nodig is om dat wel te kunnen doen, en
+[docs/PRIVACY.md](docs/PRIVACY.md) voor wat de app met gegevens doet.
+
+Verzoeken van Family7 over het gebruik van hun merk of content worden
+gehonoreerd; neem daarvoor contact op via de GitHub-repository.

@@ -7,115 +7,178 @@ import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.Request
 import org.jsoup.Jsoup
+import java.io.IOException
 
 class Family7AuthRepository(appContext: Context) {
+
     private val context: Context = appContext.applicationContext
 
     private val client = Family7Http.getClient(context)
     private val cookieJar = Family7Http.getCookieJar(context)
-    private val authPrefs: SharedPreferences = context.getSharedPreferences("family7_auth_prefs", Context.MODE_PRIVATE)
+    private val authPrefs: SharedPreferences =
+        context.getSharedPreferences("family7_auth_prefs", Context.MODE_PRIVATE)
 
     companion object {
         private const val KEY_IS_LOGGED_IN = "is_logged_in"
-        private const val KEY_SAVED_USERNAME = "saved_username"
-        private const val KEY_UID = "user_uid"
-        private const val LOGIN_URL = "https://www.family7.nl/user/login"
+        private const val KEY_SAVED_USERNAME = "saved_username_v2"
+        private const val KEY_UID = "user_uid_v2"
+        private const val BASE_URL = "https://www.family7.nl"
+        private const val LOGIN_URL = "$BASE_URL/user/login"
+        private const val ACCOUNT_URL = "$BASE_URL/user"
+        private val UID_IN_PATH = Regex("/user/(\\d+)")
+
+        /** Waar dezelfde gegevens onversleuteld stonden vóór versie 1.2.0. */
+        private val LEGACY_KEYS = mapOf(
+            KEY_SAVED_USERNAME to "saved_username",
+            KEY_UID to "user_uid"
+        )
     }
 
-    suspend fun login(usernameOrEmail: String, pass: String, rememberMe: Boolean = true): Result<UserSession> = withContext(Dispatchers.IO) {
+    suspend fun login(
+        usernameOrEmail: String,
+        pass: String,
+        rememberMe: Boolean = true
+    ): Result<UserSession> = withContext(Dispatchers.IO) {
+        val account = usernameOrEmail.trim()
         try {
-            // Step 1: GET /user/login to extract form_build_id
-            val getReq = Request.Builder()
-                .url(LOGIN_URL)
-                .build()
+            // Stap 1: het formulier ophalen voor het form_build_id dat Drupal
+            // per bezoek meegeeft; zonder dat wijst hij de aanmelding af.
+            val formBuildId = client.newCall(Request.Builder().url(LOGIN_URL).build())
+                .execute()
+                .use { response ->
+                    Jsoup.parse(response.body?.string().orEmpty())
+                        .selectFirst("input[name=form_build_id]")
+                        ?.attr("value")
+                        .orEmpty()
+                }
 
-            val getResp = client.newCall(getReq).execute()
-            val getHtml = getResp.body?.string() ?: ""
-            getResp.close()
-
-            val doc = Jsoup.parse(getHtml)
-            val formBuildId = doc.select("input[name=form_build_id]").attr("value")
-
-            // Step 2: POST /user/login with credentials and form_build_id
-            val formBodyBuilder = FormBody.Builder()
-                .add("name", usernameOrEmail.trim())
+            // Stap 2: de aanmelding zelf.
+            val form = FormBody.Builder()
+                .add("name", account)
                 .add("pass", pass)
                 .add("form_id", "user_login_form")
                 .add("op", "Inloggen")
-
-            if (formBuildId.isNotEmpty()) {
-                formBodyBuilder.add("form_build_id", formBuildId)
-            }
-            if (rememberMe) {
-                formBodyBuilder.add("persistent_login", "1")
-            }
-
-            val postReq = Request.Builder()
-                .url(LOGIN_URL)
-                .post(formBodyBuilder.build())
+                .apply {
+                    if (formBuildId.isNotEmpty()) add("form_build_id", formBuildId)
+                    if (rememberMe) add("persistent_login", "1")
+                }
                 .build()
 
-            val postResp = client.newCall(postReq).execute()
-            val postHtml = postResp.body?.string() ?: ""
-            val finalUrl = postResp.request.url.toString()
-            postResp.close()
+            val postHtml = client.newCall(
+                Request.Builder().url(LOGIN_URL).post(form).build()
+            ).execute().use { it.body?.string().orEmpty() }
 
-            // Step 3: Check if login was successful
-            // On success, Drupal redirects to /user/{uid} or /plus/..., or user-logged-in class is present in HTML
-            val cookies = cookieJar.getAllCookies()
-            val hasSessionCookie = cookies.keys.any { it.startsWith("SSESS") || it.startsWith("SESS") }
-            val isSuccess = hasSessionCookie || finalUrl.contains("/user/") || postHtml.contains("user-logged-in") || postHtml.contains("Mijn account")
-
-            if (isSuccess) {
-                val uidMatch = Regex("/user/(\\d+)").find(finalUrl)
-                val uid = uidMatch?.groupValues?.get(1) ?: ""
-
-                authPrefs.edit()
-                    .putBoolean(KEY_IS_LOGGED_IN, true)
-                    .putString(KEY_SAVED_USERNAME, usernameOrEmail.trim())
-                    .putString(KEY_UID, uid)
-                    .apply()
-
-                Result.success(
-                    UserSession(
-                        isLoggedIn = true,
-                        username = usernameOrEmail.trim(),
-                        email = usernameOrEmail.trim(),
-                        uid = uid,
-                        cookies = cookies
-                    )
-                )
-            } else {
-                // Parse Drupal error message if available
-                val errorDoc = Jsoup.parse(postHtml)
-                val errorMsg = errorDoc.select(".messages--error, .alert-danger, .messages.error").text().ifEmpty {
-                    "Inloggen mislukt. Controleer uw e-mailadres en wachtwoord."
-                }
-                Result.failure(Exception(errorMsg))
+            // Drupal meldt een verkeerde combinatie in het formulier zelf. Die
+            // melding is het betrouwbaarste signaal dat er iets mis is; het
+            // adres waarop we uitkomen is dat niet, want bij een fout blijft de
+            // gebruiker gewoon op /user/login staan.
+            val formError = Jsoup.parse(postHtml)
+                .select(".messages--error, .messages.error, .alert-danger")
+                .text()
+                .trim()
+            if (formError.isNotEmpty()) {
+                return@withContext Result.failure(Exception(formError))
             }
+
+            // Stap 3: laat Family7 zelf bevestigen wie we nu zijn. /user leidt een
+            // ingelogde bezoeker door naar /user/{uid} en een anonieme naar de
+            // aanmeldpagina. Geen giswerk op losse woorden in de HTML.
+            val uid = fetchOwnUid()
+                ?: return@withContext Result.failure(
+                    Exception("Inloggen mislukt. Controleer uw e-mailadres en wachtwoord.")
+                )
+
+            authPrefs.edit()
+                .putBoolean(KEY_IS_LOGGED_IN, true)
+                .putString(KEY_SAVED_USERNAME, SessionCrypto.encrypt(account))
+                .putString(KEY_UID, SessionCrypto.encrypt(uid))
+                .apply()
+
+            Result.success(
+                UserSession(
+                    isLoggedIn = true,
+                    username = account,
+                    email = account,
+                    uid = uid,
+                    cookies = cookieJar.getAllCookies()
+                )
+            )
+        } catch (e: IOException) {
+            Result.failure(
+                Exception("Verbindingsfout: ${e.localizedMessage ?: "Kon geen verbinding maken met Family7"}")
+            )
         } catch (e: Exception) {
-            Result.failure(Exception("Verbindingsfout: ${e.localizedMessage ?: "Kon geen verbinding maken met Family7"}"))
+            Result.failure(
+                Exception("Inloggen mislukt: ${e.localizedMessage ?: "onbekende fout"}")
+            )
         }
     }
 
+    /**
+     * De sessie bij het opstarten.
+     *
+     * Eerst het antwoord dat we lokaal al hebben, zodat de app ook zonder
+     * netwerk opent. Staat er een sessiecookie, dan vraagt hij Family7 om
+     * bevestiging: pas als die duidelijk zegt dat de sessie voorbij is, wordt
+     * er uitgelogd. Een haperend netwerk gooit de gebruiker er dus niet uit.
+     */
     suspend fun checkSession(): UserSession = withContext(Dispatchers.IO) {
         val wasLoggedIn = authPrefs.getBoolean(KEY_IS_LOGGED_IN, false)
-        val savedUser = authPrefs.getString(KEY_SAVED_USERNAME, "") ?: ""
-        val savedUid = authPrefs.getString(KEY_UID, "") ?: ""
-        val cookies = cookieJar.getAllCookies()
-        val hasSessionCookie = cookies.keys.any { it.startsWith("SSESS") || it.startsWith("SESS") }
+        if (!wasLoggedIn || !cookieJar.hasSessionCookie()) {
+            return@withContext UserSession(isLoggedIn = false)
+        }
 
-        if (wasLoggedIn && hasSessionCookie) {
-            UserSession(
+        val savedUser = readEncrypted(KEY_SAVED_USERNAME)
+        val savedUid = readEncrypted(KEY_UID)
+
+        val confirmedUid = try {
+            fetchOwnUid()
+        } catch (_: IOException) {
+            // Onbereikbaar: de opgeslagen sessie blijft staan.
+            return@withContext UserSession(
                 isLoggedIn = true,
                 username = savedUser,
                 email = savedUser,
                 uid = savedUid,
-                cookies = cookies
+                cookies = cookieJar.getAllCookies()
             )
-        } else {
-            UserSession(isLoggedIn = false)
         }
+
+        if (confirmedUid == null) {
+            logout()
+            return@withContext UserSession(isLoggedIn = false)
+        }
+
+        UserSession(
+            isLoggedIn = true,
+            username = savedUser,
+            email = savedUser,
+            uid = confirmedUid,
+            cookies = cookieJar.getAllCookies()
+        )
+    }
+
+    /** Het eigen gebruikersnummer volgens Family7, of null als we niet ingelogd zijn. */
+    private fun fetchOwnUid(): String? =
+        client.newCall(Request.Builder().url(ACCOUNT_URL).build()).execute().use { response ->
+            UID_IN_PATH.find(response.request.url.encodedPath)?.groupValues?.get(1)
+        }
+
+    /**
+     * Leest een versleutelde waarde. Staat er nog een onversleutelde waarde van
+     * een oudere versie, dan wordt die overgezet in plaats van weggegooid; een
+     * update hoort niemand uit te loggen.
+     */
+    private fun readEncrypted(key: String): String {
+        authPrefs.getString(key, null)?.let { return SessionCrypto.decrypt(it) ?: "" }
+
+        val legacyKey = LEGACY_KEYS[key] ?: return ""
+        val legacyValue = authPrefs.getString(legacyKey, null) ?: return ""
+        authPrefs.edit()
+            .putString(key, SessionCrypto.encrypt(legacyValue))
+            .remove(legacyKey)
+            .apply()
+        return legacyValue
     }
 
     fun logout() {
@@ -123,7 +186,5 @@ class Family7AuthRepository(appContext: Context) {
         authPrefs.edit().clear().apply()
     }
 
-    fun getSavedUsername(): String {
-        return authPrefs.getString(KEY_SAVED_USERNAME, "") ?: ""
-    }
+    fun getSavedUsername(): String = readEncrypted(KEY_SAVED_USERNAME)
 }

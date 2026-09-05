@@ -10,7 +10,11 @@ import android.os.SystemClock
  * [fresh] geeft die waarde alleen terug als hij nog vers is, zodat snel heen en
  * weer navigeren geen nieuwe netwerkoproep kost.
  */
-class TimedCache<T>(private val ttlMs: Long) {
+class TimedCache<T>(
+    private val ttlMs: Long,
+    /** Losse klok, zodat het verlopen van de houdbaarheid te testen is. */
+    private val clock: () -> Long = { SystemClock.elapsedRealtime() }
+) {
     @Volatile private var value: T? = null
     @Volatile private var storedAt = 0L
 
@@ -18,12 +22,12 @@ class TimedCache<T>(private val ttlMs: Long) {
 
     fun fresh(): T? {
         val v = value ?: return null
-        return if (SystemClock.elapsedRealtime() - storedAt < ttlMs) v else null
+        return if (clock() - storedAt < ttlMs) v else null
     }
 
     fun put(v: T) {
         value = v
-        storedAt = SystemClock.elapsedRealtime()
+        storedAt = clock()
     }
 
     fun clear() {

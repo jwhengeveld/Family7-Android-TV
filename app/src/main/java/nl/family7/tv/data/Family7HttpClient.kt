@@ -1,84 +1,161 @@
 package nl.family7.tv.data
 
 import android.content.Context
-import okhttp3.Cache
-import java.io.File
 import android.content.SharedPreferences
+import nl.family7.tv.BuildConfig
+import okhttp3.Cache
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
+import org.json.JSONArray
+import java.io.File
+import java.io.IOException
+import java.io.InterruptedIOException
 import java.util.concurrent.TimeUnit
 
+/**
+ * Bewaart de aanmeldsessie tussen twee keer opstarten, versleuteld met een
+ * sleutel uit de AndroidKeyStore. Welke cookie bij welk adres hoort bepaalt
+ * [CookieStore]; dit deel gaat alleen over opslaan en terugzetten.
+ */
 class PersistentCookieJar(context: Context) : CookieJar {
-    private val prefs: SharedPreferences = context.getSharedPreferences("family7_cookies", Context.MODE_PRIVATE)
-    private val cookieStore = mutableMapOf<String, MutableList<Cookie>>()
+
+    private val prefs: SharedPreferences =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val store = CookieStore()
 
     init {
-        loadCookies()
+        restore()
     }
 
-    private fun loadCookies() {
-        val allEntries = prefs.all
-        for ((host, serializedCookies) in allEntries) {
-            if (serializedCookies is String && serializedCookies.isNotEmpty()) {
-                val list = serializedCookies.split("||").mapNotNull { cookieStr ->
-                    val url = HttpUrl.Builder().scheme("https").host(host).build()
-                    Cookie.parse(url, cookieStr)
-                }.toMutableList()
-                cookieStore[host] = list
-            }
+    private fun restore() {
+        val stored = prefs.getString(KEY_COOKIES, null)
+            ?: return migrateFromPlainStorage()
+        val plain = SessionCrypto.decrypt(stored)
+        if (plain == null) {
+            // Onleesbaar geworden, bijvoorbeeld na het herstellen van een
+            // back-up op een ander toestel. Weggooien en opnieuw inloggen.
+            prefs.edit().remove(KEY_COOKIES).apply()
+            return
         }
+        val restored = runCatching {
+            val array = JSONArray(plain)
+            (0 until array.length()).mapNotNull { CookieCodec.decode(array.getString(it)) }
+        }.getOrDefault(emptyList())
+        store.replaceAll(restored)
     }
 
-    private fun saveCookies(host: String) {
-        val list = cookieStore[host] ?: return
-        val serialized = list.joinToString("||") { "${it.name}=${it.value}; domain=${it.domain}; path=${it.path}" }
-        prefs.edit().putString(host, serialized).apply()
+    /**
+     * Neemt de sessie over uit de onversleutelde opslag van een oudere versie,
+     * zodat een update niet iedereen uitlogt. Daarna gaat het oude formaat weg.
+     */
+    private fun migrateFromPlainStorage() {
+        val legacy = prefs.all.filterKeys { it != KEY_COOKIES }
+        if (legacy.isEmpty()) return
+
+        val restored = legacy.flatMap { (host, value) ->
+            val serialized = value as? String ?: return@flatMap emptyList()
+            val url = runCatching {
+                HttpUrl.Builder().scheme("https").host(host).build()
+            }.getOrNull() ?: return@flatMap emptyList()
+            serialized.split("||").mapNotNull { Cookie.parse(url, it) }
+        }
+
+        prefs.edit().apply {
+            legacy.keys.forEach { remove(it) }
+        }.apply()
+
+        if (restored.isEmpty()) return
+        store.replaceAll(restored)
+        persist()
+    }
+
+    private fun persist() {
+        val array = JSONArray()
+        store.valid().forEach { array.put(CookieCodec.encode(it)) }
+        val encrypted = SessionCrypto.encrypt(array.toString())
+        if (encrypted == null) {
+            // Zonder werkende keystore liever niets op schijf dan onbeschermd.
+            prefs.edit().remove(KEY_COOKIES).apply()
+            return
+        }
+        prefs.edit().putString(KEY_COOKIES, encrypted).apply()
     }
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-        val host = url.host
-        val current = cookieStore.getOrPut(host) { mutableListOf() }
-        for (cookie in cookies) {
-            current.removeAll { it.name == cookie.name }
-            current.add(cookie)
-        }
-        saveCookies(host)
+        if (cookies.isEmpty()) return
+        store.save(cookies)
+        persist()
     }
 
-    override fun loadForRequest(url: HttpUrl): List<Cookie> {
-        val host = url.host
-        val cookies = mutableListOf<Cookie>()
-        for ((storedHost, list) in cookieStore) {
-            if (host.endsWith(storedHost) || storedHost.endsWith(host)) {
-                cookies.addAll(list)
-            }
-        }
-        return cookies
-    }
+    override fun loadForRequest(url: HttpUrl): List<Cookie> = store.forUrl(url)
 
     fun clear() {
-        cookieStore.clear()
+        store.clear()
         prefs.edit().clear().apply()
     }
 
-    fun getAllCookies(): Map<String, String> {
-        val map = mutableMapOf<String, String>()
-        for (list in cookieStore.values) {
-            for (c in list) {
-                map[c.name] = c.value
+    /** Of er een geldige Drupal-sessie in de jar zit. */
+    fun hasSessionCookie(): Boolean = store.hasSessionCookie()
+
+    fun getAllCookies(): Map<String, String> = store.asNameValueMap()
+
+    private companion object {
+        const val PREFS_NAME = "family7_cookies"
+        const val KEY_COOKIES = "cookies_v2"
+    }
+}
+
+/**
+ * Probeert een mislukt GET-verzoek opnieuw. Een tv hangt vaak aan wifi die er
+ * na het aanzetten een paar seconden over doet; zonder deze herkansing ziet de
+ * gebruiker dan een foutscherm terwijl het netwerk een tel later gewoon werkt.
+ */
+private class RetryOnNetworkFailure(private val maxAttempts: Int) : Interceptor {
+
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        var lastFailure: IOException? = null
+
+        repeat(maxAttempts) { attempt ->
+            if (chain.call().isCanceled()) throw IOException("Verzoek afgebroken")
+            try {
+                return chain.proceed(request)
+            } catch (e: InterruptedIOException) {
+                throw e
+            } catch (e: IOException) {
+                if (request.method != "GET") throw e
+                lastFailure = e
+                val isLastAttempt = attempt == maxAttempts - 1
+                if (isLastAttempt) throw e
+                try {
+                    Thread.sleep(BACKOFF_MS * (attempt + 1))
+                } catch (interrupted: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw e
+                }
             }
         }
-        return map
+        throw lastFailure ?: IOException("Verzoek mislukt")
+    }
+
+    private companion object {
+        const val BACKOFF_MS = 300L
     }
 }
 
 object Family7Http {
+
     private const val USER_AGENT =
         "Mozilla/5.0 (Linux; Android 10; Android TV) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+    private const val CACHE_BYTES = 20L * 1024 * 1024
+    private const val MAX_ATTEMPTS = 3
 
     @Volatile private var clientInstance: OkHttpClient? = null
     @Volatile private var cookieJarInstance: PersistentCookieJar? = null
@@ -93,16 +170,14 @@ object Family7Http {
     }
 
     private fun buildClient(context: Context): OkHttpClient {
-        val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BASIC
-        }
         // Disk-cache van 20 MB, zodat een koude start en het verversen tegen
         // procesdood kunnen en niet elke keer alles opnieuw over het netwerk halen.
-        val httpCache = Cache(File(context.applicationContext.cacheDir, "family7_http"), 20L * 1024 * 1024)
-        return OkHttpClient.Builder()
+        val httpCache = Cache(File(context.applicationContext.cacheDir, "family7_http"), CACHE_BYTES)
+
+        val builder = OkHttpClient.Builder()
             .cache(httpCache)
             .cookieJar(getCookieJar(context))
-            .addInterceptor(logging)
+            .addInterceptor(RetryOnNetworkFailure(MAX_ATTEMPTS))
             // Family7 stuurt op ingelogde pagina's "no-cache"; op dit ene apparaat
             // is een korte bewaartijd prima en scheelt telkens opnieuw ophalen.
             .addNetworkInterceptor { chain ->
@@ -118,14 +193,26 @@ object Family7Http {
             }
             .addInterceptor { chain ->
                 val original = chain.request()
-                val builder = original.newBuilder().header("User-Agent", USER_AGENT)
+                val withHeaders = original.newBuilder().header("User-Agent", USER_AGENT)
                 if (original.header("Referer") == null) {
-                    builder.header("Referer", "https://www.family7.nl/")
+                    withHeaders.header("Referer", "https://www.family7.nl/")
                 }
-                chain.proceed(builder.build())
+                chain.proceed(withHeaders.build())
             }
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
-            .build()
+            // Bovengrens over alle herkansingen heen, zodat een scherm nooit
+            // eindeloos op een laadbalk blijft staan.
+            .callTimeout(60, TimeUnit.SECONDS)
+
+        // Alleen tijdens ontwikkelen meelezen: in een release horen de bezochte
+        // adressen van een gebruiker niet in logcat thuis.
+        if (BuildConfig.DEBUG) {
+            builder.addInterceptor(
+                HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC }
+            )
+        }
+
+        return builder.build()
     }
 }
