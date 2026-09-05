@@ -9,6 +9,11 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# Standaard is de token van een workflow alleen-lezen; zonder dit recht kan de
+# stap "Publish Release" geen release aanmaken (HTTP 403).
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build, Test & Package
